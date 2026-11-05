@@ -1,0 +1,183 @@
+I've audited the repository. Here is the structured report.
+
+▎ Note on tooling: claude-mem's memory observer is currently out of allowance (per the session-start notice), so nothing from this session will be persisted. I've relied solely on live repo inspection.
+
+---
+
+Redemptis-Tiariea — Asset Pipeline Migration Plan (Planning-Only)
+
+1. Current asset architecture (confirmed)
+
+Layout
+- Original SVG source assets live under public/, served by Vite as static files and tracked in Git.
+- public/assets/ contains 4 categories: Components/ (Aistiaria 8, Yutiarin 11, Verdania empty), Ships/ (10), Turrets-Platforms/ (2), Planets/ (PNGs only — excluded from the SVG manifest), plus empty Weapons/ dirs.
+- public/minimap/ holds 3 SVG icons (Capital-Ship, Corvette, Fighter).
+- public/favicon.svg and public/icons.svg are also tracked.
+- public/raw/Components and public/raw/Ships exist but contain only .gitkeep — no actual raw assets.
+- private/ exists on disk but is empty. .gitignore (uncommitted local change, M .gitignore) already adds /private/.
+
+Generated manifest
+- scripts/generate-public-svg-manifest.mjs walks public/assets, normalizes each SVG path into a stable texture key (public-<sanitized-path>), emits /assets/<url> references, applies 3 hardcoded LEGACY_ALIASES, and writes src/generated/publicSvgManifest.ts.
+- It is wired as both predev and prebuild in package.json.
+- It has idempotency: skips rewrite if content is unchanged.
+- tests/public-svg-manifest.test.ts covers discovery, URL encoding, aliases, collision resolution, and idempotency.
+
+Copyright/ownership metadata
+- scripts/add-svg-copyright.mjs inserts RDF/Dublin Core <metadata> blocks into SVGs, backed by scripts/svg-ownership.json (all 44 listed assets = PROJECT_OWNED, fallback UNKNOWN), using saxes for XML parsing/validation, with --dry-run and --restore modes and backups under scripts/backups/svg-copyright/.
+
+Runtime consumption (confirmed paths)
+- src/main.ts BootScene.preload() loads 3 planet PNGs via this.load.image(...) and iterates publicSvgTextures calling this.load.svg(asset.key, asset.url, { scale: 0.5 }).
+- src/ui/MiniMap.ts defines MINIMAP_SHIP_ICON_ASSETS with hardcoded keys/URLs (/minimap/*.svg) and loads them the same way in preload().
+- No other src/ file references .svg or load.svg. No AssetProvider, AssetContainer, .bin, RTAB, or rtmod infrastructure exists anywhere in src/.
+
+Build/dev tooling
+- Vite 8, Phaser 4.2.1, esbuild, saxes, tsx. No vite config file (Vite uses defaults; public/ is the static root). No file-watcher script exists yet.
+
+2. Existing scripts and responsibilities
+
+┌──────────────────────────────────────────┬──────────────────────────────────────┬──────────────────┬─────────────────────────────────────────────┐
+│                  Script                  │            Responsibility            │      Input       │                   Output                    │
+├──────────────────────────────────────────┼──────────────────────────────────────┼──────────────────┼─────────────────────────────────────────────┤
+│ scripts/generate-public-svg-manifest.mjs │ Discover SVGs, normalize keys,       │ public/assets/   │ src/generated/publicSvgManifest.ts          │
+│                                          │ resolve collisions, emit TS manifest │                  │                                             │
+├──────────────────────────────────────────┼──────────────────────────────────────┼──────────────────┼─────────────────────────────────────────────┤
+│ scripts/add-svg-copyright.mjs            │ Validate XML, insert/verify RDF      │ public/          │ Mutates SVGs; backups in                    │
+│                                          │ copyright metadata, backup/restore   │ (recursive)      │ scripts/backups/svg-copyright/              │
+├──────────────────────────────────────────┼──────────────────────────────────────┼──────────────────┼─────────────────────────────────────────────┤
+│ scripts/svg-ownership.json               │ Ownership classification table       │ (data)           │ (data)                                      │
+└──────────────────────────────────────────┴──────────────────────────────────────┴──────────────────┴─────────────────────────────────────────────┘
+
+Both scripts currently scan public/. Neither computes content fingerprints, bundle offsets, or .bin packaging. saxes is already available for XML validation — reuse it.
+
+3. Current runtime loading flow
+
+1. npm run predev → generate-public-svg-manifest.mjs → writes src/generated/publicSvgManifest.ts.
+2. vite serves public/ statically; index.html loads /src/main.ts.
+3. BootScene.preload() → load.svg(key, url) for every manifest entry + 3 minimap icons + 3 planet PNGs.
+4. BootScene.create() registers legacy aliases via textures.addImage.
+5. GameScene.create() consumes textures by textureKey (e.g. public-ships-human-frigate, minimap-fighter).
+
+All texture keys are stable strings derived from file paths. This is the interface the migration must preserve.
+
+4. Problems and migration risks
+
+1. Source exposure: original SVGs are Git-tracked under public/, so a clone exposes uncompiled artwork.
+2. Two scan roots to keep in sync: generate-public-svg-manifest.mjs and add-svg-copyright.mjs both walk public/; migrating to private/ requires coordinated changes or they'll drift.
+3. Manifest is generated, not committed — a clean clone regenerates it from whatever is in public/assets/. If public/ is later emptied, predev must not fail silently.
+4. No fingerprint/integrity mechanism — nothing records which source produced a bundle, so "source unavailable" validation (Phase requirement) has no baseline to check against.
+5. public/raw/ is a dead end — empty dirs with .gitkeep, no pipeline consumes them.
+6. Phaser load.svg is the runtime choke point — every texture key currently maps 1:1 to a URL. Bundling breaks that 1:1 mapping; a provider indirection is required before bundles can be consumed.
+7. Existing baseline: npm test = 120 passed / 2 failed (pre-existing phase2a-taxonomy.test.ts failures), tsc --noEmit passes. npm run build was deliberately not run during the audit.
+8. dist/ is present but gitignored — no production-artifact-inclusion check exists yet.
+9. Windows path/encoding risk: filenames contain spaces and # (Part 1.svg, Yutiarin Kinetic Lance Frigate.svg); the manifest already URL-encodes these, but any new bundler must preserve that encoding.
+
+5. Proposed phases and dependencies
+
+Phase 0 — Audit (this document). No file changes. Dependency: none.
+
+Phase 1 — Private source migration preparation.
+- Create private/assets/ mirroring the public/assets/ category structure (Components/, Ships/, Turrets-Platforms/, minimap/).
+- Copy SVGs from public/ → private/ (preserving paths, copyright metadata already embedded).
+- Update scripts/svg-ownership.json keys from public/... to private/... (or keep dual keys during transition).
+- Update both scripts to scan private/ or add a config/env var for the source root (prefer a single shared constant, e.g. ASSET_SOURCE_ROOT).
+- Add a backup/migration-verification step (hash comparison public/ vs private/).
+- Recommendation: migrate one category first — minimap/ (3 files, self-contained, loaded by a single hardcoded table in MiniMap.ts, zero aliases, lowest runtime risk). Then Ships/, then Components/, then Turrets-Platforms/.
+- Runtime stays functional because public/ copies remain until each category is verified.
+
+Phase 2 — Binary packaging pipeline.
+- Design .bin as a JSON-indexed container (not encrypted): { version, bundles: { category: { assets: [{ id, mime, data (base64 or raw bytes)], fingerprint } } } plus a top-level manifest with format version and bundle fingerprints.
+- Packaging script scripts/package-assets.mjs:
+  - Reads from private/, validates XML/SVG via saxes (reuse add-svg-copyright.mjs's isValidXml).
+  - Preserves asset IDs and metadata; records SHA-256 source fingerprint.
+  - Detects missing/duplicate/malformed assets; supports category-based bundles.
+  - Skips rebuild when fingerprint unchanged (incremental).
+  - Writes to temp file, validates, then atomically replaces the target .bin (never expose a partially-written bundle).
+  - Reproducible: deterministic key ordering, no timestamps in output.
+- Output location: public/assets/<category>.bin (or public/bundles/), committed to Git.
+
+Phase 3 — Development & production integration.
+- predev/prebuild: run packaging in validate-only mode when private/ is absent (fail clearly if a required bundle is missing/invalid); generate when source is present.
+- Add a dev watcher (e.g. chokidar — justify: no current dep; alternatively a lightweight fs.watch Node script) alongside Vite that rebuilds only the affected category on source change. Avoid watching generated output dirs.
+- Ensure no overlapping packaging (single-flight lock file or PID).
+- vite.config.js (new, minimal) to exclude private/ from the build and ensure only .bin + approved assets ship.
+
+Phase 4 — Runtime asset consumption.
+- Introduce an AssetProvider interface in src/assets/ (Phaser-independent):
+interface AssetProvider {
+  getTextureKey(id: string): string;        // stable ID → runtime key
+  getSvgUrl(id: string): string;             // dev path
+  preload(scene: Phaser.Scene): Promise<void>; // register all
+}
+- Implement BundleAssetProvider (reads .bin + manifest, decodes into data URLs / Blob for load.svg) and SourceAssetProvider (dev, reads private/ via manifest). Select at runtime via an env flag or build target.
+- Gameplay managers query by stable ID only — no knowledge of offsets/compression/encryption.
+
+Phase 5 — Category-by-category migration.
+Order: minimap/ → Ships/ → Components/ → Turrets-Platforms/ → favicon.svg/icons.svg.
+Per category: source migration → bundle generation → runtime integration → render/loading verification → tests → Git verification → remove old public/ SVGs.
+
+Phase 6 — Production validation.
+- Pre-build guard script: verify bundles present, version supported, manifest/fingerprints valid; error on missing assets with controlled fallback; verify clean-clone works from committed bundles; verify private/ not tracked by Git (git check-ignore).
+
+6. Suggested changes to existing files
+
+┌──────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┬───────┐
+│                   File                   │                                             Change                                             │ Phase │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ scripts/generate-public-svg-manifest.mjs │ Parameterize assetsRoot (already takes it as an arg); add --source-root private mode; emit an  │ 1     │
+│                                          │ additional fingerprint field per asset.                                                        │       │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ scripts/add-svg-copyright.mjs            │ Parameterize PUBLIC_DIR → source root; accept private/.                                        │ 1     │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ scripts/svg-ownership.json               │ Retarget keys to private/... (keep public/... entries until category verified).                │ 1     │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ src/main.ts                              │ Route BootScene SVG loads through the AssetProvider instead of direct publicSvgTextures        │ 4     │
+│                                          │ iteration.                                                                                     │       │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ src/ui/MiniMap.ts                        │ Replace hardcoded MINIMAP_SHIP_ICON_ASSETS URLs with provider lookups by stable ID.            │ 4     │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ package.json                             │ Add prepack/prebuild/predev wiring for the new bundler; add watch:assets script.               │ 3     │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ src/generated/publicSvgManifest.ts       │ Regenerated; consider committing it (currently generated at runtime).                          │ 1     │
+├──────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+│ .gitignore                               │ Already updated locally (/private/); keep.                                                     │ 0     │
+└──────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────┴───────┘
+
+7. Genuinely necessary new files
+
+- scripts/package-assets.mjs — bundler (Phase 2).
+- scripts/validate-bundles.mjs — source-unavailable validation (Phase 3/6).
+- scripts/watch-assets.mjs — dev file watcher (Phase 3).
+- scripts/verify-clean-clone.mjs — Git/clone guard (Phase 6).
+- src/assets/AssetProvider.ts — provider interface + BundleAssetProvider/SourceAssetProvider (Phase 4).
+- tests/asset-provider.test.ts, tests/bundle-packaging.test.ts — verification.
+
+No new npm dependencies are strictly required: saxes (XML), Node crypto (SHA-256), Node fs/promises (atomic write via rename), and optionally chokidar for watching (justify before adding).
+
+8. Testing and verification criteria per phase
+
+- Phase 1: node scripts/generate-public-svg-manifest.mjs --source-root private produces identical keys to the public/ run; node scripts/add-svg-copyright.mjs --dry-run reports zero malformed; git status shows private/ ignored; hash comparison public/ vs private/ per file = identical.
+- Phase 2: node scripts/package-assets.mjs → .bin present; re-run is a no-op (idempotent); deleting one source SVG makes the run fail with a clear "missing asset" error; a corrupted .bin is detected by fingerprint mismatch; npm test (existing) still 120+/2.
+- Phase 3: npm run predev succeeds with and without private/; dev server serves the game; editing one private/ SVG rebuilds only its category bundle within ~2s; no partial bundle is ever served (verify mtime/size stability mid-write).
+- Phase 4: BootScene loads all textures via provider; existing public-svg-manifest.test.ts still passes; add a test asserting provider resolves the same keys the old manifest did (alias central-hull, human-dreadnought, alien-interceptor).
+- Phase 5: Per-category: npm test, visual smoke (game boots, ships render, minimap icons render), then git rm public/assets/<category>/*.svg and confirm build still works from .bin.
+- Phase 6: node scripts/verify-clean-clone.mjs on a fresh clone (simulated by git stash of generated + checking .bin only); git check-ignore private/ returns the path; npm run build fails loudly if a required .bin is absent.
+
+9. Git and clean-clone behaviour
+
+- private/ is ignored (already in the working-tree .gitignore change). Generated .bin files under public/ remain tracked and commit-able.
+- A clean clone must run the game from committed .bin bundles alone: npm run predev must validate (not require) when private/ is absent, and npm run dev/build must succeed.
+- Source-unavailable mode must not overwrite valid bundles with empty/incomplete output, and must fail clearly on missing/invalid bundles.
+- Backups of the original public/ SVGs must be made before any git rm (e.g. scripts/backups/svg-source/), since Git will not preserve ignored files.
+
+10. Recommended first implementation task
+
+Phase 1, category minimap/ only — migrate the 3 minimap SVGs to private/assets/minimap/.
+
+Scope (clearly bounded):
+1. Create private/assets/minimap/, copy public/minimap/Capital-Ship.svg, Corvette.svg, Fighter.svg there.
+2. Add a ASSET_SOURCE_ROOT constant (default private, env-overridable) shared by both existing scripts; switch generate-public-svg-manifest.mjs and add-svg-copyright.mjs to read from it, keeping public/ as the output/served root.
+3. Update scripts/svg-ownership.json keys for the 3 minimap files to private/....
+4. Verify: manifest keys unchanged, copyright script dry-run clean, git status shows private/ ignored, hashes match.
+5. Leave public/minimap/*.svg in place (runtime untouched).
+
+This is the smallest end-to-end slice that exercises every later phase's prerequisite (source root parameterization, ownership re-targeting, Git ignore, verification) without touching runtime loading or bundling. Awaiting your approval before any file changes.
