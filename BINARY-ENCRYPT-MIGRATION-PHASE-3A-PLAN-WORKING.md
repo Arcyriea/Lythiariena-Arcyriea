@@ -20,7 +20,7 @@ Phase 3A specifies the versioned RTAB asset container and its generated manifest
 | Scenario | Behavior |
 |----------|----------|
 | **Any version other than v1.0** | Reject with an explicit unsupported-version diagnostic. V1.0 defines no forward-compatible extension mechanism; a later version must define one before readers may accept it. |
-| **Nonzero reserved or unsupported feature flag** | Reject with an explicit error. |
+| **Nonzero reserved header bit or index flag** | Reject with an explicit error. |
 | **Unsupported compression method** | Reject the affected bundle. |
 
 **### 1.3 Format String**
@@ -151,7 +151,7 @@ Each record references its asset ID in the shared string table. ID offsets are r
 | 8 | 8 | Payload offset | Unsigned `uint64`; relative to the payload-section start |
 | 16 | 8 | Stored size | Unsigned `uint64`; payload bytes stored for this record |
 | 24 | 8 | Original size | Unsigned `uint64`; original source bytes before compression |
-| 32 | 2 | Content type | Unsigned `uint16`: 0=SVG, 1=PNG, 2=JSON; 3=Unknown is reserved and rejected by v1.0 packagers and readers, as are all unassigned values |
+| 32 | 2 | Content type | Unsigned `uint16`: 0=SVG, 1=PNG, 2=JSON, 3=Unknown; Phase 3B packaging support is restricted as specified in section 3.4.4 |
 | 34 | 2 | Compression method | Unsigned `uint16`: 0=NONE, 1=ZLIB, 2=GZIP; v1 permits only 0 |
 | 36 | 4 | Entry flags/reserved | Unsigned `uint32`; zero in v1 |
 | 40 | 32 | Payload SHA-256 | Raw 32-byte SHA-256 digest of the stored payload bytes |
@@ -198,6 +198,8 @@ For each record, the validator must check with overflow-safe arithmetic that its
 - The payload digest is SHA-256 of exactly these stored bytes.
 
 **#### 3.4.4 Payload Validation**
+
+Phase 3B packages SVG assets only. Although the content-type field identifies SVG (0), PNG (1), and JSON (2), the Phase 3B packager must reject PNG, JSON, `Unknown` (3), and any unassigned content type; this phase does not define PNG or JSON payload validation.
 
 Every SVG source must be a non-zero-byte, well-formed XML document whose document element is an SVG root. Malformed XML, a non-SVG root, or a zero-byte file rejects the package before any output is replaced. A valid non-zero-byte SVG such as a minimal `<svg/>` document is allowed even if it draws nothing.
 
@@ -312,7 +314,7 @@ The default packager **must** reject (with explicit error and exit code 1) if an
 | **Duplicate asset IDs** | `"Fatal: duplicate asset ID "\<id>" detected. Asset IDs must be unique."` |
 | **Duplicate texture keys** | `"Fatal: duplicate texture key "\<key>" detected. Texture keys must be unique."` |
 | **Conflicting aliases** | `"Fatal: conflicting legacy alias "\<alias>" maps to both "\<key1>" and "\<key2>"` |
-| **Unsupported content type** (including `3=Unknown` in v1.0) | `"Fatal: unsupported content type \<type> for asset \<id>"` |
+| **Unsupported content type** (including PNG, JSON, `3=Unknown`, and unassigned values for the SVG-only Phase 3B packager) | `"Fatal: unsupported content type \<type> for asset \<id>"` |
 | **Incomplete bundle** (no assets packaged) | `"Fatal: no assets were packaged. Cannot generate incomplete bundle."` |
 
 **### 6.2 Never Silent Failures**
@@ -406,10 +408,11 @@ The manifest must preserve these exact alias associations in each asset's `alias
 - **Behavior**: Reject every version other than v1.0, including v1.1, with an explicit unsupported-version diagnostic such as `"Unsupported RTAB version 1.1 (0x0101). Supported version: 1.0 (0x0100)."`.
 - **Compatibility condition**: V1.0 defines no unknown-field skipping or forward-compatibility mechanism. A later format version must define and version its extension rules before readers accept it.
 
-**### 9.3 Unknown Required Feature Flags**
+**### 9.3 Header and Index Flags**
 
-- **Behavior**: Reject.
-- **Example**: File header has flag bit set that the runtime does not recognize as optional → error: `"Unknown required feature flag in RTAB bundle"`.
+- Header bits 0 (`hasIndex`) and 1 (`hasPayload`) are the only recognized bits; both must be set in v1.0, and every other header bit must be zero.
+- The index flags field must be zero in v1.0.
+- **Behavior**: Reject any violation with an explicit diagnostic, such as `"Unsupported RTAB header flags"` or `"Unsupported RTAB index flags"`.
 
 **### 9.4 Unsupported Compression Methods**
 
@@ -565,6 +568,7 @@ These are **established facts** from the codebase exploration, not design decisi
 
 - The container uses the 64-byte little-endian `RTAB` outer header and an embedded `INDX` index with the exact v1 fields, 72-byte records, shared UTF-8 string table, and trailing digest defined in section 3.
 - The version field's high byte is the major version and low byte is the minor version; v1.0 is `0x0100`. V1.0 rejects content type `Unknown` and all unassigned content-type values.
+- Phase 3B packages SVG assets only; its packager rejects PNG, JSON, `Unknown`, and unassigned content types. V1.0 requires header bits 0 and 1 set, all other header bits zero, and index flags zero.
 - The outer `payloadOffset` is absolute; record payload offsets are relative to the payload section.
 - V1 stores raw, uncompressed asset bytes and rejects zero-byte, malformed, non-SVG-root, oversized, or incomplete source inputs.
 - `scripts/asset-registry.json` is the sole authoring authority. The public manifest and schema are generated output; asset membership is represented by per-asset `bundleId` only.
