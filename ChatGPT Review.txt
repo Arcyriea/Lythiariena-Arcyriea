@@ -1,0 +1,428 @@
+# Review: Phase 3B.3 — Folder-Driven Asset Packaging
+
+Strong architecture
+
+Changes needed before approval
+
+I've reviewed the updated Copilot plan in full, including its planet PNG additions, registry changes, bundle-generation strategy, publication safety, and proposed watcher.
+
+My verdict: the plan is substantially improved and is close to being ready for Stage A approval. However, I recommend a few corrections and clarifications before implementation.
+
+Most importantly, Copilot has correctly recognized that this is not simply an exercise in splitting `nonships.bin`. It is establishing a folder-driven asset packaging system that can eventually accommodate more asset categories without rewriting the packager every time.
+
+That is the right architectural direction.
+
+## 1. What Copilot got right
+
+### A. Four independent bundles
+
+The proposed output structure matches your decisions:
+
+| Source directory     | Output                  |
+| -------------------- | ----------------------- |
+| `Ships/`             | `ships.bin`             |
+| `Components/`        | `components.bin`        |
+| `Turrets-Platforms/` | `turrets-platforms.bin` |
+| `Planets/`           | `planets.bin`           |
+
+No numeric suffixes, no combined `nonships.bin`, and no manually assigned bundle numbers.
+
+The separation also means that adding a future category can produce another bundle without changing the identities of existing assets.
+
+### B. Correct separation of responsibilities
+
+I particularly like this distinction:
+
+- Folders: determine bundle membership.
+- Registry: determines stable asset identity and runtime metadata.
+- Packager: discovers, reconciles, validates, and serializes assets.
+- Manifest: describes generated bundles and their contents.
+- Watcher: coordinates the same packaging system when changes occur.
+
+This is important because folder names should not become the source of asset identity.
+
+Moving an asset between folders should not silently change its asset ID or texture key.
+
+### C. Planet identity is handled carefully
+
+Copilot correctly distinguishes three concepts:
+
+1. The PNG's file asset ID.
+2. Its Phaser texture key.
+3. A possible future gameplay planet ID.
+
+These should not be conflated.
+
+It also correctly identifies that `Map-111-2.png` and `Map-122-2.png` have no established runtime texture keys. Assigning proposed keys to them is reasonable, but those keys need your approval.
+
+### D. RTAB format remains unchanged
+
+Supporting PNG does not require changing RTAB v1.0.
+
+The existing content-type values already accommodate:
+
+- SVG = `0`
+- PNG = `1`
+
+Preserving original PNG bytes without decoding and re-encoding them is also correct.
+
+### E. Publication safety
+
+The proposed publication sequence is sensible:
+
+1. Build the complete output set.
+2. Validate every output.
+3. Publish bundles and schema.
+4. Publish the manifest last.
+5. Retire the old nested ship bundle only after successful publication.
+
+This avoids prematurely deleting the currently valid `public/assets/Ships/ships.bin`.
+
+I also agree with preserving the Git index and avoiding automatic staging, unstaging, or commits.
+
+## 2. Issues I would address before implementation
+
+### A. Planet IDs and texture keys need an explicit approval gate
+
+Decision required
+
+The five proposed IDs are:
+
+| PNG             | Proposed asset ID         | Texture key            |
+| --------------- | ------------------------- | ---------------------- |
+| `Map-111.png`   | `rt.planet-map.map-111`   | `planetMap111`         |
+| `Map-111-2.png` | `rt.planet-map.map-111-2` | `planetMap111Variant2` |
+| `Map-122.png`   | `rt.planet-map.map-122`   | `planetMap122`         |
+| `Map-122-2.png` | `rt.planet-map.map-122-2` | `planetMap122Variant2` |
+| `Map-692.png`   | `rt.planet-map.map-692`   | `planetMap692`         |
+
+I would preserve the three existing Phaser texture keys exactly. They are already part of the game's loading/configuration contract.
+
+For the other two, I would not automatically assume that `-2` means a second variant of the same planet. It might be an alternate map, another layer, or something else.
+
+My recommendation: approve the proposed file IDs as provisional asset identities, but leave the two unused texture keys subject to confirming what those images represent.
+
+There is no reason to invent gameplay planet IDs during this migration.
+
+### B. PNG validation needs a defined resource policy
+
+Decision required
+
+Copilot's proposed PNG validation is thorough, but full decompression and scanline validation introduce a potential resource-exhaustion problem.
+
+A small compressed PNG can expand into a very large image.
+
+The implementation needs explicit limits for:
+
+- Maximum image width and height.
+- Maximum decoded image size.
+- Maximum compressed file size.
+- Maximum aggregate decoded size during validation.
+
+I recommend validating the PNG structure and decompression stream without re-encoding the image, while enforcing those limits.
+
+The exact limits should be selected after inspecting the five existing PNG dimensions and decoded sizes. We should not choose arbitrary limits that accidentally reject existing planets.
+
+### C. Folder normalization needs one more safeguard
+
+The ASCII-only recommendation is sensible.
+
+I agree with:
+
+- Lowercase category names.
+- Convert spaces, underscores, and hyphens into a consistent hyphen separator.
+- Reject non-ASCII folder names.
+- Reject normalized-name collisions.
+- Never resolve collisions by adding numeric suffixes.
+
+One additional requirement: the packager must never rename the source directories to make them conform.
+
+It should report the invalid directory and stop. Folder organization remains under your control.
+
+### D. Registry schema migration needs compatibility tests
+
+This is one of the more consequential changes.
+
+The current registry explicitly contains:
+
+- `bundleId` on some asset entries.
+- A `bundles` object describing bundle filenames.
+- Registry schema version `1.0`.
+
+The current validator also enforces SVG-only paths, SVG-only content types, and a fixed count of 31 assets.
+
+Therefore, Copilot is correct that this needs more than just adding five PNG records.
+
+I agree with deriving bundle membership from the directory structure rather than maintaining a second manually authored bundle assignment.
+
+However, the migration must prove all of the following:
+
+1. All 31 existing SVG asset IDs remain unchanged.
+2. All existing texture keys remain unchanged.
+3. All existing aliases remain unchanged.
+4. Existing logical paths remain unchanged.
+5. The generated runtime SVG manifest remains exactly 31 entries.
+6. The three existing legacy aliases still resolve correctly.
+7. The generated RTAB manifest correctly describes all 36 assets.
+
+The registry, generated manifest, and RTAB format versions must remain independent. Advancing the registry or manifest schema must not accidentally change RTAB v1.0.
+
+### E. Clean-clone behavior needs a precise definition
+
+The plan correctly distinguishes:
+
+- No `private/` directory: validate committed bundles without modifying anything.
+- An existing but incomplete `private/` directory: fail instead of silently falling back to public assets.
+
+I would add one more acceptance test:
+
+A clean-clone validation must not regenerate, rewrite, or delete any generated output.
+
+It should only validate the committed manifest, schema, bundle hashes, and bundle contents.
+
+That distinction matters because the clean-clone path is a validation-only operation, not a packaging operation.
+
+### F. Publication recovery needs a little more precision
+
+The transaction strategy is good, but a process can terminate unexpectedly between individual file renames.
+
+The plan acknowledges that multiple renames cannot provide true crash atomicity.
+
+I recommend one additional recovery rule:
+
+- Never automatically delete an orphaned `.tmp` or `.bak` file merely because it looks old.
+- First establish whether it belongs to an interrupted publication.
+- If ownership or recovery state is ambiguous, stop and report the files.
+- Only clean up files whose relationship to the interrupted operation can be established.
+
+This is safer than potentially destroying a user's unrelated file.
+
+## 3. Stage A and Stage B should remain separate
+
+Keep this separation
+
+I strongly agree with Copilot's decision to divide the work.
+
+Stage A — One-shot packaging
+
+Approve first
+
+- Migrate five planet PNGs into `private/assets/Planets/`.
+- Extend the registry to support PNG.
+- Discover categories and derive bundle names.
+- Generate four RTAB bundles.
+- Generate the manifest and schema.
+- Validate clean-clone behavior.
+- Safely retire the old nested ship bundle.
+
+Stage B — Continuous asset listener
+
+Separate approval
+
+- Watch asset and directory changes.
+- Detect additions, deletions, renames, and modifications.
+- Reconcile registry changes.
+- Rebuild affected bundles.
+- Preserve valid outputs after failures.
+- Handle Windows filesystem watching correctly.
+
+I would not combine these stages.
+
+First, we need to establish that the one-shot packaging architecture works reliably. Then we can build a listener around it.
+
+The listener should reuse the same packaging and validation functions, not introduce a second implementation of bundle generation.
+
+Also, I agree with leaving Phaser runtime integration to Phase 3C. This phase should not modify `main.ts`, `Game.ts`, or `Planet.ts`.
+
+## 4. One important architectural consideration: future categories
+
+I like the proposed source-root-independent design.
+
+For example, a future directory could look like:
+
+```
+private/
+└── assets/
+    ├── Ships/
+    ├── Components/
+    ├── Turrets-Platforms/
+    ├── Planets/
+    ├── Projectiles/
+    ├── Effects/
+    └── Backgrounds/
+```
+
+The packaging system should not need a new hardcoded rule every time you introduce another category.
+
+But I want to preserve an important distinction:
+
+Folder discovery should be generic; asset-type validation should remain explicit.
+
+A future folder does not automatically mean that every file format is supported. The current scope should support registered SVG and PNG assets only. JSON and other formats should remain rejected until separately designed.
+
+This also keeps the future mod-support possibility open without implementing mod loading now.
+
+## 5. Additional source-code findings
+
+I cross-checked the plan against the actual source files at the repository revision identified in Copilot's report.
+
+There are several existing implementation details that should be explicitly included in the migration checklist:
+
+| File                                       | Required consideration                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `scripts/asset-registry.mjs`               | Remove fixed 31-asset production validation; support SVG and PNG logical paths. |
+| `scripts/asset-registry.json`              | Migrate bundle authority out of the authored registry.                          |
+| `scripts/package-assets.mjs`               | Replace SVG-only record validation with content-type-specific validation.       |
+| `scripts/prepare-assets.mjs`               | Integrate ownership-based stale bundle recovery and publication.                |
+| `scripts/generate-public-svg-manifest.mjs` | Explicitly filter registry entries to SVG.                                      |
+| `scripts/asset-roots.mjs`                  | Preserve existing SVG-only discovery behavior.                                  |
+
+Two particularly important details:
+
+- `package-assets.mjs` currently validates RTAB payloads through SVG decoding. PNG support must be implemented in both packaging and subsequent bundle verification.
+- `generate-public-svg-manifest.mjs` currently uses registry entries directly in its normal registry-driven path. It must explicitly select SVG entries, or adding planets could accidentally change the runtime SVG manifest.
+
+These are not reasons to reject the architecture, but they are important acceptance criteria.
+
+## 6. My recommended decisions
+
+Here is how I would settle the remaining design questions:
+
+| Decision                       | Recommendation                   |
+| ------------------------------ | -------------------------------- |
+| Four bundle names              | Approve as written               |
+| Folder-driven membership       | Approve                          |
+| Registry schema 1.1            | Approve                          |
+| Manifest schema 1.1            | Approve, independently versioned |
+| RTAB format                    | Keep 1.0                         |
+| ASCII-only category names      | Approve                          |
+| Numeric suffixes               | Prohibit                         |
+| PNG support                    | Approve, with resource limits    |
+| Five proposed planet asset IDs | Approve provisionally            |
+| Existing three texture keys    | Preserve exactly                 |
+| Two unused PNG texture keys    | Confirm image purpose first      |
+| Watcher                        | Separate Stage B                 |
+| Mod loading                    | Out of scope                     |
+| Phase 3C                       | Out of scope                     |
+
+One thing I would not approve yet is the exact PNG decompression policy. It should be established using the actual five images rather than arbitrary limits.
+
+## 7. Feedback I recommend sending Copilot
+
+I would ask Copilot to make one final plan revision, rather than immediately implementing it.
+
+# Phase 3B.3 Plan Review — Required Final Clarifications
+
+The revised architecture is accepted in principle. Before Stage A implementation, please update the plan to incorporate the following requirements.
+
+## 1. Preserve the four-bundle architecture
+
+The following names and folder-derived grouping are approved:
+
+- `ships.bin`
+- `components.bin`
+- `turrets-platforms.bin`
+- `planets.bin`
+
+Do not introduce numeric suffixes, combined `nonships.bin`, or manually maintained bundle numbering.
+
+Folders determine bundle membership. Registry entries determine stable asset identities and runtime metadata.
+
+## 2. Planet identity and texture keys
+
+Keep the three existing Phaser texture keys unchanged:
+
+- `planetMap111`
+- `planetMap122`
+- `planetMap692`
+
+Treat the five proposed file asset IDs as provisional identities, not gameplay planet IDs.
+
+Do not assume the two unused PNG files are alternate versions of existing planets without confirming their intended purpose.
+
+Keep their proposed texture keys subject to explicit confirmation.
+
+## 3. PNG validation and resource limits
+
+Define a resource policy based on inspection of the five existing PNG files.
+
+Specify:
+
+- Maximum dimensions.
+- Maximum compressed file size.
+- Maximum decoded size per image.
+- Maximum aggregate decoded size during validation.
+- Safe handling of PNG decompression and scanline validation.
+
+Do not re-encode PNG files.
+
+## 4. Registry and runtime compatibility
+
+Explicitly audit all existing registry and packaging validation paths.
+
+In particular:
+
+- Remove the fixed production registry count of 31.
+- Support SVG and PNG content types.
+- Keep JSON and unknown content types unsupported.
+- Derive bundle membership from category folders.
+- Preserve all existing SVG IDs, logical paths, keys, aliases, and source bytes.
+- Ensure the runtime SVG manifest remains exactly 31 entries.
+- Keep `listSourceAssets()` SVG-only.
+- Ensure RTAB bundle validation dispatches according to record content type.
+- Update clean-clone validation to derive expected bundle membership from the new architecture.
+
+Registry schema and generated manifest schema may advance independently. RTAB remains version 1.0.
+
+## 5. Folder safety
+
+Preserve the ASCII-only category naming policy, normalized-name collision detection, path traversal protection, case-insensitive collision checks, and rejection of symlinks/reparse points.
+
+Never rename source folders automatically.
+
+## 6. Clean-clone and publication recovery
+
+Clean-clone validation must be strictly read-only.
+
+For publication recovery:
+
+- Never wildcard-delete bundle files or temporary files.
+- Preserve the existing nested Ships bundle until all replacement outputs validate and publish successfully.
+- Recover handled publication failures safely.
+- Stop and report ambiguous orphaned backup or temporary files rather than deleting them automatically.
+
+Preserve the Git index. No staging, unstaging, or commits.
+
+## 7. Stage separation
+
+Stage A remains limited to source migration, registry changes, one-shot folder-driven packaging, output validation, and safe publication.
+
+Stage B remains a separate implementation and approval gate for the continuous listener.
+
+Do not implement mod loading, runtime Phaser changes, or Phase 3C.
+
+## 8. Final deliverable
+
+Return the revised implementation plan and a clear list of:
+
+- Explicitly approved decisions.
+- Remaining decisions requiring my confirmation.
+- Exact files expected to change.
+- Tests and acceptance criteria.
+- Risks and rollback behavior.
+
+Do not modify repository files, generate bundles, stage changes, or implement anything while preparing this revision.
+
+Stop and wait for my explicit Stage A implementation approval.
+
+## Final verdict
+
+Architecture approved in principle
+
+I think Copilot has made a meaningful improvement here. The new design is much closer to a proper asset packaging pipeline rather than a collection of scripts that happen to generate binary files.
+
+I would not send it straight into implementation yet. I'd first settle the planet metadata and PNG resource policy, then have Copilot produce the final revised plan.
+
+After that, we can approve Stage A independently, inspect its actual generated bundles and hashes, and only then authorize Stage B.
+
+That keeps the migration controlled while building the foundation for the larger asset system you have in mind.
