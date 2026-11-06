@@ -1,160 +1,167 @@
-Phase 3B.3 — Folder-Driven Asset Packaging Plan
-Planning only. I inspected the current repository and relevant migration, RTAB, and mod-support documents. No files were edited or created, no tests were run, and Git staging was left untouched.
+Revised Phase 3B.3 Plan — Folder-Driven Packaging with Planet PNGs
+Planning only. I have now read the full pasted text, including the material before the Planet requirement, and incorporated it below. No source, documentation, registry, asset, or Git changes were made; I did not run tests or generate bundles.
 
-1. Current repository and implementation
+1. Current repository and Git state
 Git root: C:/GitHub/Redemptis-Tiariea
 Remote: origin https://github.com/Arcyriea/Redemptis-Tiariea.git
-Branch / HEAD: main / 405ec63a7cb0d322b559f029a03d4734dddd8937
-The worktree is already dirty. Three Phase 3B.1 outputs are staged: the current Ships bundle, RTAB manifest, and schema. Existing unstaged changes include .gitignore, package.json, and two SVG scripts; migration, registry, packager, preparation, and test files are untracked. private/, dist/, dependencies, and several planning documents are ignored. Preserve all of this; do not stage, unstage, or commit.
-The current asset registry has 31 assets, schema version 1.0, ten bundleId: "ships1" entries, and a ships1 bundle declaration. The other 21 assets have no bundle assignment.
+Branch / HEAD: main / 19a8d01c84f558fc14a219e3240ea8050dae061c
+The worktree and index are clean. The Phase 3B.1 outputs are tracked in HEAD but not staged as current changes.
+public/assets/Ships/ships.bin exists and is tracked. The new root-level public/assets/ships.bin does not yet exist.
+The prior staged-state report is no longer accurate for this checkout. During implementation, preserve the current index. If the new outputs publish successfully, retire the old nested Ships bundle only afterward; without staging, its removal will appear as an unstaged worktree deletion, while newly generated bundle files will appear as untracked. A failed generation or publication must leave the old bundle and index unchanged.
 
-asset-registry.mjs validates the explicit bundle table, defaults to exactly 31 assets, and requires exactly three aliases. Those constraints obstruct straightforward addition of registered assets and categories.
+The four source documents reviewed are BINARY-ENCRYPT-MIGRATION.md, the Phase 3B.2 plan, the future mod-support document, and the Phase 3A specification. The mod-support document’s singular turret-platforms.bin spelling should be reconciled to the agreed plural filename.
 
-package-assets.mjs loads and validates the registry’s sources, but packages only entries assigned to its declared bundles. It does not discover category folders or reject unregistered SVGs. Its RTAB v1.0 encoding and validation are already centralized and should remain unchanged.
+2. Verified source inventory and planet references
+The existing private tree contains 31 SVGs: Ships (10, 110,711 bytes), Components (19, 74,319 bytes), and Turrets-Platforms (2, 27,960 bytes). Those SVGs and their public counterparts are out of scope for migration and must remain unchanged.
 
-prepare-assets.mjs selects package versus read-only validation based on whether private/ exists. Its publisher stages outputs and rolls back on caught publication errors, but it does not remove obsolete generated bundles.
+There are five public planet PNGs, totaling 7,971,788 bytes. No private Planets copies currently exist.
 
-Current private folders contain 10 Ships, 19 Components, and 2 Turrets-Platforms SVGs. The existing Phase 3B.2 plan is a useful historical audit, but its grouping recommendation predates this request. The future mod-support document has the right general separation of folder grouping from registry metadata, but its table says turret-platforms.bin (singular). This plan follows your current requirement: turrets-platforms.bin.
+Current public PNG path	Size
+Map-111.png	1,261,169 bytes
+Map-111-2.png	1,446,567 bytes
+Map-122.png	1,175,688 bytes
+Map-122-2.png	1,416,526 bytes
+Map-692.png	2,671,838 bytes
+In main.ts, Phaser loads three of the files with existing texture keys: planetMap111, planetMap122, and planetMap692. Those keys are used in the respective planet background configurations at main.ts, main.ts, and main.ts. Planet.ts uses the supplied texture string as the shader texture input.
 
-The Phase 3A specification separates registry schema, manifest schema, and RTAB format versions. It also requires deterministic payload ordering, source and bundle fingerprints, strict input validation, and clean-clone read-only validation. The older migration outline already anticipates incremental rebuilds and a development watcher.
+No code references were found for Map-111-2.png or Map-122-2.png. Game.ts tracks planet positions/radii for the minimap but has no stable planet identifiers or PNG texture assignments. Thus the current texture key is not a planet gameplay ID, and the filename is not verified to be one.
 
-2. Recommended source of truth and folder discovery
-Keep the existing separation of responsibilities:
+3. Four-bundle architecture and source discovery
+Agreed organization:
 
-Private folder structure: determines category membership and bundle grouping.
-Registry: owns stable asset IDs, logical paths, texture keys, aliases, and content types.
-Packager: discovers files, reconciles them against registered assets, derives bundle metadata, and creates outputs.
-Generated manifest: records packaged assets, their derived bundleId, bundle paths, and fingerprints. It remains generated output, not an authoring source.
-On a source-available preparation, scan the immediate child directories of private/assets/ as categories, then recursively enumerate supported SVGs within each category. Match each discovered file to exactly one registered logical path, preserving case. Fail before publication for a missing registered source, an unregistered SVG, a duplicate/case-colliding path, a symlink/reparse point, or a category name that cannot produce a unique safe bundle name. Ignore empty category directories; do not emit empty bundles.
+Private top-level category	Bundle ID	Generated output	Current contents
+Ships/	ships	public/assets/ships.bin	10 SVGs
+Components/	components	public/assets/components.bin	19 SVGs, recursively including Aistiaria and Yutiarin
+Turrets-Platforms/	turrets-platforms	public/assets/turrets-platforms.bin	2 SVGs
+Planets/	planets	public/assets/planets.bin	5 PNGs
+No numeric suffixes or combined nonships.bin are permitted.
 
-The physical category directory is the packaging authority. The corresponding registry logicalPath must agree with the source’s mirrored path; it supplies identity and runtime metadata, not an alternate bundle assignment. For clean-clone validation, where private sources are absent, derive expected category membership from the registered logical paths and compare that expectation with the generated manifest.
+The packager should scan immediate child directories under private/assets/, recurse within each category, and reconcile every supported file against exactly one registry entry. The folder determines bundle grouping; the registry supplies identity and runtime metadata; the packager validates and produces bundles; the generated manifest records derived bundle IDs, filenames, membership, and fingerprints. The listener, when added, will coordinate this same packager rather than implement packaging independently.
 
-Bundle ID and filename normalization
-Derive the bundle ID and output path from the category directory name; do not add numeric suffixes:
+Naming recommendation: accept ASCII category names composed of alphanumeric groups separated by spaces, underscores, or hyphens; lowercase them and normalize separator runs to -. Reject non-ASCII names instead of transliterating them. Detect normalized-name collisions before output changes and fail rather than add suffixes. This preserves current names and makes future naming behavior deterministic.
 
-Category directory	Derived bundle ID	Output
-Ships/	ships	/assets/ships.bin
-Components/	components	/assets/components.bin
-Turrets-Platforms/	turrets-platforms	/assets/turrets-platforms.bin
-Future Stations/	stations	/assets/stations.bin
-Proposed normalization: Unicode NFKD normalization, remove combining marks, lowercase, replace each run of non-ASCII-alphanumeric characters with -, then trim leading/trailing hyphens. Reject an empty result and detect collisions after normalization before building anything. For example, two differently named category directories normalizing to the same slug must fail, not be suffixed or silently combined.
+Behavior for discovered content:
 
-Also refuse to overwrite a target .bin file unless the prior generated manifest establishes that the packager owns that path. This protects user-owned files that happen to match a derived output name.
+.svg and .png are the only supported source extensions in this phase; each must match its registry contentType and pass format validation.
+JSON and unknown content types remain unsupported, even though JSON is enumerated in RTAB v1.0.
+An unregistered SVG or PNG fails explicitly; the packager never invents IDs, keys, or aliases.
+A registered but missing source fails; there is no public-file fallback.
+Any unsupported file inside a category fails with its path rather than being silently ignored.
+An empty category directory produces no bundle. A registered asset missing from that directory still fails reconciliation.
+A new category produces a bundle only when it contains registered supported assets. For future categories, allow registered SVG/PNG files without adding a category-specific packaging rule. For the four current categories, enforce the stated SVG/PNG expectations.
+Reject path traversal, duplicate logical paths, case-insensitive collisions, symlinks/reparse points, unsafe category names, and output path collisions before publication.
 
-3. Registry and generated-manifest changes
-Recommendation: remove authored bundleId fields and the authored bundles object. Retain bundleId in the generated manifest as derived output metadata. This gives category folders one packaging authority without changing asset identities or runtime metadata.
+4. Planet identities and source onboarding
+Each PNG needs its own file asset ID. This does not create or imply a gameplay planet ID. If future files are multiple maps or layers for one planet, each remains a distinct asset; any parent gameplay relationship should be represented separately in future metadata.
 
-I recommend bumping the registry schema to 1.1 because its authored shape changes. Keep the RTAB format at 1.0; keep the generated manifest schema at 1.0 because its structure need not change. The three versions remain independent as specified in Phase 3A.
+The following IDs and texture keys are proposals, derived from the observed filenames and existing code. They are not existing identities:
 
-To support future registered categories without weakening the existing compatibility contract:
+PNG	Current texture key / code reference	Proposed asset ID	Proposed logical path	Type	Open mapping question
+Map-111.png	planetMap111; load and scene config in main.ts and main.ts	rt.planet-map.map-111	assets/Planets/Map-111.png	PNG	Confirm proposed ID; filename is not a verified planet ID.
+Map-111-2.png	No runtime reference found	rt.planet-map.map-111-2	assets/Planets/Map-111-2.png	PNG	Confirm whether it is an alternate map/layer; proposed key planetMap111Variant2 is new.
+Map-122.png	planetMap122; load and scene config in main.ts and main.ts	rt.planet-map.map-122	assets/Planets/Map-122.png	PNG	Confirm proposed ID; filename is not a verified planet ID.
+Map-122-2.png	No runtime reference found	rt.planet-map.map-122-2	assets/Planets/Map-122-2.png	PNG	Confirm whether it is an alternate map/layer; proposed key planetMap122Variant2 is new.
+Map-692.png	planetMap692; load and scene config in main.ts and main.ts	rt.planet-map.map-692	assets/Planets/Map-692.png	PNG	Confirm proposed ID; filename is not a verified planet ID.
+All five should be registered and packaged in planets.bin under the requested full-inventory behavior. The two unused files need registry texture keys because the registry requires explicit keys, but they have no existing key to preserve; the proposed names need review.
 
-Remove the hard-coded default count of 31 from runtime registry loading; assert the current 31 expected identities in tests instead.
-Continue requiring the three existing alias-to-asset mappings, including central-hull, but allow additional valid aliases rather than requiring the global alias count to remain exactly three.
-Reject legacy authored bundle declarations in the new registry schema, so bundle metadata is not maintained in two places.
-The generated RTAB manifest should contain all currently registered and packaged assets: 31 assets grouped into three bundles. The separate generated publicSvgManifest.ts must remain byte-for-byte unchanged: all 31 texture keys, URLs, and aliases remain intact. Phaser continues loading loose public SVGs; this is not Phase 3C.
+The onboarding procedure will inventory exact public paths and casing, inspect destinations, stage copies under the same volume, verify SHA-256 for each, and publish with no-overwrite semantics. It must refuse conflicting destinations and keep all five public PNGs intact. The existing 31 private SVGs are not touched.
 
-4. Stage A — One-shot folder-driven packaging
-Implement and verify this stage before adding the continuous listener:
+5. Source-root and discovery impact
+asset-roots.mjs already has a broad recursive private assets root with logical prefix assets. Therefore assets/Planets/... maps to the intended private/assets/Planets/... location after copying; there is no need for a new Planets-specific root or public override.
 
-Extend registry validation for the new schema and remove authored bundle assignments.
-Add reusable category-slug derivation and private folder inventory/reconciliation to the packager.
-Build one bundle for each non-empty category, recursively including nested directories.
-Generate the same RTAB v1.0 format and generated manifest/schema, with derived IDs and root-level bundle URLs.
-Update manifest validation to derive expected membership from registry paths when private sources are unavailable.
-Extend preparation and publication to handle the complete bundle set and stale generated bundle removal safely.
-Verify predev/prebuild still do full preparation when private assets exist and read-only validation when private/ is absent.
-At the current inventory, the expected outputs are:
+However, current asset-registry.mjs only accepts .svg logical paths, and its registry validation only accepts SVG. The packager must extend safe logical-path and type/extension validation to support PNG. listSourceAssets() is intentionally SVG-only and used by SVG-oriented tooling; retain that behavior rather than accidentally adding PNGs to unrelated SVG processing. The package scanner can walk the private category tree independently.
 
-Bundle	Assets	Raw SVG bytes	Expected RTAB bytes at current inputs
-ships.bin	10	110,711	111,817
-components.bin	19	74,319	76,407
-turrets-platforms.bin	2	27,960	28,296
-The Ships bundle’s payloads should remain identical to the existing ten-ship bundle. With unchanged inputs and RTAB v1.0 ordering, verify its generated bytes/hash are unchanged; only its output path and manifest identity change.
+The public runtime manifest generator currently discovers registry entries and must explicitly remain SVG-only. generate-public-svg-manifest.mjs should filter to SVG records so its output remains exactly 31 entries, including the current URLs, keys, and aliases. The generated publicSvgManifest.ts must remain byte-identical. Do not edit main.ts, Game.ts, or Planet.ts.
 
-Publication and stale output handling
-Generate and validate the full output set before touching published files. Reuse and strengthen the existing rollback-capable publisher:
+6. RTAB v1.0 SVG and PNG handling
+Keep the existing RTAB v1.0 format unchanged: 64-byte outer header, 28-byte index header, 72-byte records, SHA-256 payload/index digest semantics, and compression method NONE.
 
-Stage temporary files adjacent to their destinations to retain same-volume renames.
-Publish bundle files and schema before the manifest, treating the manifest as the commit marker.
-Back up replaced files and roll back all changes on caught failure.
-Identify stale bundles only from a prior generated manifest that can be safely parsed and whose paths are confined to public/assets/. Never wildcard-delete .bin files.
-Remove stale generated bundles transactionally only after successful validation. Preserve all SVG sources.
-Refuse ambiguous ownership, path collisions, invalid sources, and invalid manifests before publication.
-A multi-file rename is not truly atomic across a process crash. The implementation should guarantee rollback for handled errors, preserve the last valid published set on build/validation failures, and document crash recovery limits. This is a known risk rather than a claim of filesystem-wide atomicity.
+SVG keeps the existing UTF-8 XML, well-formedness, and SVG-root validation and preserves exact source bytes.
+PNG stores the original source bytes without image decode/re-encode and without another compression layer.
+RTAB record content type is 0 for SVG and 1 for PNG. Both payloads use the current SHA-256 process over exact bytes.
+PNG validation should cover the actual structure, not the filename: signature, first and unique IHDR, valid nonzero dimensions and legal IHDR fields, bounded chunk ranges, CRC for every chunk, required IDAT, required/valid PLTE when indexed, valid chunk ordering, zero-length IEND, and no bytes after IEND. Reject unknown critical chunks. For robust validation, also validate the IDAT zlib stream and scanline structure without re-encoding the image. This introduces a decoded-size/resource-limit policy that should be resolved before implementation to avoid excessive decompression memory use.
 
-The old generated public/assets/Ships/ships.bin path is currently staged. Moving to the required root-level public/assets/ships.bin means it becomes obsolete. After all new outputs validate, remove that old generated file from the worktree as a stale manifest-owned bundle, but do not stage or unstage anything. The index must remain unchanged; report the resulting staged/worktree status clearly.
+Tests must verify PNG bytes survive packaging exactly, and reject malformed signatures, dimensions, truncation, invalid CRCs, bad chunk order, missing required chunks, malformed compressed data, and trailing data.
 
-5. Stage B — Continuous development listener, separate from Stage A
-Do not couple filesystem watching to bundle-format or registry discovery logic. The listener should call the same preparation/packaging APIs; it must not own a second implementation of packaging.
+7. Registry and generated metadata
+Recommendation, not an already approved schema decision:
 
-Recommended approach: add a small scripts/watch-assets.mjs coordinator and attach it to the Vite development-server lifecycle through a new vite.config.mjs, using Vite’s existing watcher rather than introducing a new dependency initially. Explicitly add and watch private/assets/ and scripts/asset-registry.json; test that ignored private paths are watched correctly on Windows. Add Chokidar as a development dependency only if Vite’s watcher fails the required platform behavior tests.
+Move registry schema to 1.1, remove authored per-asset bundleId values and the authored bundles table, and remove the hard-coded total of 31 from production registry validation.
+Keep the 31 existing SVG identities, paths, keys, and aliases unchanged.
+Add the five proposed PNG asset entries after their IDs and the two new texture keys are reviewed.
+Keep the three required legacy alias mappings, but permit additional valid aliases with collision checks.
+Derive bundle IDs from the folder category; retain bundleId only in generated manifest output.
+Consider generated manifest schema 1.1 to reflect its expanded SVG/PNG content-type contract; retain RTAB format 1.0. Registry, manifest schema, and RTAB format versions remain independent.
+A fresh generated manifest should describe all 36 assets and the four bundles. Its schema must allow SVG and PNG, not JSON or unknown. Clean-clone validation, when private sources are absent, must verify all four bundles and compare manifest membership to registry paths and derived categories.
 
-On dev startup, perform a full reconciliation before serving changes, then watch for SVG add/change/unlink, directory add/remove, and registry edits. Keep predev/prebuild as full reconciliation boundaries so missed events cannot leave stale production output.
+8. Stage A — One-shot migration and packaging
+Recheck repository/index state and inventory private SVGs plus public planet PNGs.
+Run an explicit dry-run migration inventory for the five PNGs, then copy to mirrored private/assets/Planets/ only after no-overwrite and hash checks pass.
+Validate registry schema and all asset metadata.
+Discover and reconcile all four private categories.
+Produce and validate three SVG bundles and one PNG bundle with folder-derived names.
+Generate manifest/schema and keep the loose-SVG TypeScript manifest unchanged.
+Publish all outputs transactionally, validate them, then retire only the obsolete manifest-owned Ships/ships.bin.
+Verify read-only clean-clone preparation with private/ absent; present but incomplete private assets must fail without public fallback.
+Expected source counts and bytes are known for the SVG bundles (Ships 10/110,711; Components 19/74,319; Turrets-Platforms 2/27,960). Planets is 5/7,971,788. Planet RTAB output size will be measured from finalized IDs and exact RTAB serialization rather than guessed. The root-level ships.bin must contain byte-identical ship payloads to the existing bundle.
 
-Listener behavior:
+9. Publication, ownership, rollback, and stale output recovery
+Build and validate the complete output set before publishing. Use same-volume temporary files adjacent to outputs, publish bundles/schema first and manifest last as the commit marker, and retain prior outputs for rollback on handled failures.
 
-Debounce event bursts; serialize rebuilds with a single-flight queue. Events arriving during a build mark the state dirty and schedule one coalesced follow-up.
-For a stable edit to a registered asset, identify its category and rebuild that bundle only when the full inventory and registry still reconcile. Reuse unaffected bundles only after validating their existing fingerprints and membership; regenerate the manifest consistently.
-Use full reconciliation for registry edits, new/removed categories, moves/renames, ambiguous event batches, or invalid previous outputs. If the registry has not been updated for a move, report the missing registered path and new unregistered path; do not infer IDs or metadata.
-Validate source stability before publication. Handle Windows duplicate/rename events, case-only changes, writes in progress, and transient sharing violations without publishing partial output.
-Preserve the last valid generated outputs on errors, report the path and reason, and wait for a later event or restart rather than entering a tight retry loop.
-Detach listeners and await/cancel queued work during server shutdown.
-Watcher output changes do not hot-reload Phaser artwork. Until Phase 3C, Phaser still reads loose SVG URLs; the watcher only synchronizes generated bundles/manifests.
+Overwrite/delete an output only when it is proven packager-owned through a valid previous generated manifest: the path must be confined to public/assets/, the record must be valid, and the file hash/content must validate. Refuse collisions with paths absent from that manifest. Never wildcard-delete .bin files.
 
-6. Future mod compatibility boundary
-No mod discovery, installation, enablement, loading, merging, or override behavior is implemented in this phase.
+The old public/assets/Ships/ships.bin is tracked and currently part of the valid prior manifest. Preserve it until all four new bundles, schema, and manifest validate and publish successfully. Then remove that specific stale path based on the prior manifest ownership. If generation/publication fails, retain the old file and outputs.
 
-Keep category-name normalization and grouping independent of the base source root so a later composer can group assets from multiple independently owned source sets by category. Future mod registries should be merged in memory with the base registry, not copied into or written over private/assets/. Reserve a future namespaced ID convention such as mod.<modId>.<assetName>; reject duplicate IDs, texture keys, and aliases by default. Do not support implicit overrides: conflict/override policy, mod-qualified logical paths, and mod manifest versioning require a separate design. Removing a mod later should regenerate combined outputs from remaining sources without modifying base or mod source files.
+Multiple filesystem renames cannot be crash-atomic. Handled failures should roll back; after abrupt termination, the next full preparation must inspect the manifest and hashes, regenerate/repair the complete output set, and only remove stale owned outputs after the new set validates. Ambiguous temporary/backup files must not be wildcard-cleaned.
 
-7. Files expected to change
-Stage A — one-shot packager
-asset-registry.json — registry version and removal of authored bundle fields.
-asset-registry.mjs — extensible registry validation while preserving current identities and legacy aliases.
-package-assets.mjs — category discovery, normalization, membership reconciliation, generated metadata, and clean-clone validation.
-prepare-assets.mjs — safe publication and stale generated-bundle handling.
-package-assets.test.ts — folder-derived grouping, validation, determinism, lifecycle, collision, and rollback coverage.
-MOD-ASSET-PACKAGING-AND-FUTURE-MOD-SUPPORT.md — reconcile the documented singular filename with the approved turrets-platforms.bin.
-Generated outputs expected to change after implementation: public/assets/asset-manifest.json, public/assets/asset-manifest-schema.json if schema contents change, and the three root-level bundle files. The obsolete nested Ships bundle is removed only after successful validation. No public loose SVG, private SVG, Phaser runtime, minimap, or Vite scaffold asset should change. No edits are expected in asset-roots.mjs, generate-public-svg-manifest.mjs, or migrate-assets-private.mjs.
+10. Stage B — Continuous listener, after Stage A review
+Implement only after Stage A has been reviewed and accepted. The listener watches .svg and .png additions, changes, deletions, renames, directory changes, and registry edits. It reuses the Stage A APIs.
 
-Stage B — listener
-New scripts/watch-assets.mjs — debounce, event classification, queue, reconciliation, and shutdown.
-New vite.config.mjs — attach/detach the listener to the development-server lifecycle.
-New tests/watch-assets.test.ts — watcher event classification, coalescing, serialization, failure preservation, and disposal.
-package.json should remain unchanged if Vite’s existing watcher meets the tested Windows behavior; otherwise, any added watcher dependency or command must be separately justified before implementation.
+Debounce bursts, serialize jobs, coalesce changes during builds, and rebuild only one category when a simple registered-file modification is unambiguous. Registry edits, moves/renames, category changes, invalid outputs, or ambiguous events trigger full reconciliation. Every run validates sources and output before publication; failure preserves prior valid outputs and reports the relevant path.
 
-8. Tests and acceptance criteria
-One-shot packaging
+Use Vite’s watcher as the starting point, explicitly test recursive watching and ignored private/ paths on Windows, and do not claim support until those tests pass. Add Chokidar only if those tests demonstrate Vite’s watcher is insufficient. Dispose listeners and pending work on server shutdown. predev and prebuild remain full reconciliation boundaries.
 
-Verify current three categories map exactly to the three required filenames and IDs, with counts 10/19/2 and correct recursive Components membership.
-Verify every registered asset is packaged exactly once, with its identity, texture key, alias, and payload preserved.
-Verify adding registered Stations entries produces stations.bin; adding an unregistered SVG fails without generating an identity or changing outputs.
-Verify empty directories emit no bundle; a registered but missing source fails.
-Verify normalization collisions, exact-case mismatches, case-insensitive path collisions, unsafe names, symlinks/reparse points, and existing user-owned output collisions fail safely.
-Verify repeated preparation is deterministic and the existing Ships RTAB payload/bundle bytes remain unchanged.
-Verify all three manifests/bundles and fingerprints validate; malformed, empty, non-SVG, corrupt, and unsupported RTAB inputs fail.
-Verify stale outputs are removed only when owned by the prior manifest and that injected publication failure restores the prior bundle/manifest set.
-Verify absent-private clean-clone validation is read-only and checks the expected three bundles; present-but-incomplete sources fail without public fallback or output replacement.
-Verify publicSvgManifest.ts, all 31 public loose SVGs, all private sources, minimap files, and scaffold assets remain unchanged.
-Listener
+Regenerating bundles does not hot-reload Phaser artwork. Phaser continues loading the loose public images until separately approved Phase 3C integration.
 
-Verify startup full reconciliation and production prep catch changes missed while not watching.
-Verify duplicate events coalesce, jobs never overlap, and changes during a build schedule one follow-up.
-Verify one registered modification rebuilds its category; registry changes and structural changes use full reconciliation.
-Verify deleted/renamed registered sources and unregistered new SVGs fail without replacing valid outputs.
-Verify Windows path casing, rename event pairs, write-in-progress, and transient lock/share failures.
-Verify shutdown detaches event handlers and no process remains alive.
-Verify failed rebuild preserves previous valid bundles and manifest, and a later valid event recovers.
-Explicitly verify bundle regeneration does not change Phaser’s displayed artwork or claim runtime hot reload.
-Before implementation, rerun the current test suite to establish the actual baseline; the historical 142-pass/2-failure report in the Phase 3B.2 document is not a fresh result. Then run focused packaging/listener tests, npx tsc --noEmit, npm run predev, and npm run build. Report any baseline versus new failures distinctly.
+11. Mod-support boundary
+Do not implement mod discovery, installation, enablement, loading, merging, overrides, or conflict resolution. Keep category grouping reusable across independent source roots. Future mod registries can be merged in memory; base/mod files remain separately owned and combined bundles are generated outputs. Namespaced IDs and explicit conflict/override policies remain separate proposals. Planet asset IDs remain per-file IDs, independent of any future parent gameplay planet identity.
 
-9. Sequence, rollback, and remaining decisions
-Recheck Git status and protect the existing index and ignored files.
-Implement Stage A only; run its focused tests and validate outputs in isolated fixtures.
-Review Stage A results and generated outputs before beginning the listener.
-Implement Stage B listener and Vite lifecycle integration separately; test event failures, concurrency, Windows behavior, and shutdown.
-Run full verification and report staged versus worktree changes. Do not commit or change the index.
-Rollback restores only generated outputs changed by the attempt, including the previous manifest and old Ships bundle if publication fails. It never restores, moves, or deletes source SVGs. The Git index is never modified. The listener can be disabled by removing its Vite integration without changing the one-shot packager.
+12. Expected files and tests
+Stage A
+Expected implementation changes:
 
-Remaining design points proposed here: the exact normalization rule (including non-ASCII category names), registry schema bump to 1.1, use of Vite’s existing watcher versus a direct Chokidar dependency if Windows tests fail, and the precise stale-bundle recovery behavior after an abrupt process termination. The current request resolves the bundle split and filename spelling: three bundles, with turrets-platforms.bin plural.
+asset-registry.json and asset-registry.mjs: registry schema, PNG metadata, type/path validation, no fixed production count, no authored bundle authority.
+package-assets.mjs: recursive category discovery, reconciliation, safe names, SVG/PNG RTAB records and validation.
+prepare-assets.mjs: publication, ownership-based stale handling, rollback/recovery.
+generate-public-svg-manifest.mjs: enforce SVG-only output.
+New scripts/migrate-planet-assets-private.mjs and tests/migrate-planet-assets-private.test.ts: dry-run, SHA-256, collisions, no-overwrite, safe retry.
+package-assets.test.ts and public-svg-manifest.test.ts: category discovery, registry reconciliation, PNG structure/RTAB, deterministic output, lifecycle, SVG-only runtime manifest.
+MOD-ASSET-PACKAGING-AND-FUTURE-MOD-SUPPORT.md: reconcile filename and packaging scope.
+Generated public/assets/{ships,components,turrets-platforms,planets}.bin, manifest, and schema; remove the old nested Ships bundle only after successful publication.
+No change is expected to asset-roots.mjs because its broad private /assets mapping already covers Planets; source resolution’s .svg restriction belongs in the registry resolver. No changes are expected to main.ts, Game.ts, Planet.ts, or generated publicSvgManifest.ts.
 
-This is the plan only; I’m waiting for your explicit approval before any edits.
+Stage B
+Separate new files: scripts/watch-assets.mjs, vite.config.mjs, and tests/watch-assets.test.ts. No package/dependency change is expected unless Windows tests show Vite’s watcher is insufficient.
+
+Acceptance checks
+All 31 SVG registry identities/keys/aliases and public sources remain unchanged.
+Five PNGs are each registered once as PNG, with proposed IDs and explicit keys reviewed.
+Existing three Phaser texture keys and all public PNG files remain unchanged.
+All sources reconcile to exactly four folder-derived bundles; unregistered files and missing registered sources fail.
+RTAB v1.0 headers, type fields, fingerprints, SVG/PNG payloads, manifest, and schema validate.
+Ship payloads match the old bundle exactly.
+Failed migration, build, validation, or publication preserves public/private sources and prior valid outputs.
+Clean-clone validation is read-only and validates four bundles.
+Tests verify the generated SVG runtime manifest remains exactly 31 entries and byte-identical.
+Listener tests cover debounce, serialization, coalescing, incremental versus full rebuilds, Windows watching, failure preservation, recovery, and shutdown.
+After approval, establish a fresh npm test baseline, then run focused tests, npx tsc --noEmit, npm run predev, and npm run build.
+13. Decisions, recommendations, and unresolved items
+Explicitly decided: four separate bundles and names; folder-driven membership; SVG and PNG support under unchanged RTAB v1.0; original public assets retained; no runtime loading changes, no listener in Stage A, no mod implementation, no Phase 3C.
+
+Recommendations for review: registry schema 1.1; generated manifest schema 1.1; ASCII-only normalization; the five proposed file IDs; the proposed keys for the two currently unused PNGs; strict unsupported-file behavior; full PNG zlib/scanline validation.
+
+Unresolved: confirm the five proposed IDs and two new, unused texture keys; confirm PNG decompression/resource limits; confirm whether manifest schema should advance to 1.1; determine the exact crash-recovery policy for orphaned temp/backup files. No proposed ID is a gameplay planet ID.
+
+Implementation sequence: approve Stage A scope and metadata proposals → implement and test source onboarding + one-shot packager → inspect generated bundles/hashes and Stage A outputs → obtain separate Stage B approval → implement and verify the listener. Rollback affects generated outputs only; it never deletes source assets or changes the Git index.
+
+I’m stopping here for your review and explicit Stage A approval.
