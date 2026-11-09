@@ -1,201 +1,216 @@
-Phase 3B.3 — Final Revised Stage A Plan
-Planning only. No repository files, assets, generated outputs, or Git state were changed. This is not Stage A implementation approval.
+Phase 3B.3 — Corrected Stage A Plan
+Folder-Driven Packaging for SVG and PNG Assets
+Planning only. No repository files, assets, generated outputs, or Git state were changed. This plan does not authorize implementation or Stage A.
 
-1. Current repository and Git state
-At the latest read-only check:
+1. Repository and Git state
+At the last read-only inspection:
 
 Git root: C:/GitHub/Redemptis-Tiariea
 Remote: origin https://github.com/Arcyriea/Redemptis-Tiariea.git
 Branch / HEAD: main / 19a8d01c84f558fc14a219e3240ea8050dae061c
 Worktree and index were clean.
-public/assets/Ships/ships.bin, public/assets/asset-manifest.json, and public/assets/asset-manifest-schema.json are tracked in HEAD, not staged changes.
-All of those outputs must be preserved unless the replacement outputs have successfully validated and published. No staging, unstaging, reset, cleanup, or commit is in scope.
+The existing Ships bundle, manifest, and schema are tracked in HEAD, not staged changes.
+During any future implementation, preserve the current index. Do not stage, unstage, reset, clean, or commit.
 
-2. Verified asset inventory
-The private source tree contains 31 SVGs:
+2. Asset inventory and approved versus deferred PNGs
+The private tree currently contains 31 SVGs:
 
 Category	Assets	Raw source bytes
 Ships	10	110,711
 Components	19	74,319
 Turrets-Platforms	2	27,960
-There are five PNGs in public/assets/Planets, totaling 7,971,788 bytes. No private Planets copies exist.
+There are five PNGs in public/assets/Planets, totaling 7,971,788 bytes. Each is 2000×1000, RGBA8, non-interlaced; no private Planets copies exist.
 
-Public source	Bytes	IHDR
-Map-111.png	1,261,169	2000×1000, depth 8, color type 6, non-interlaced
-Map-111-2.png	1,446,567	2000×1000, depth 8, color type 6, non-interlaced
-Map-122.png	1,175,688	2000×1000, depth 8, color type 6, non-interlaced
-Map-122-2.png	1,416,526	2000×1000, depth 8, color type 6, non-interlaced
-Map-692.png	2,671,838	2000×1000, depth 8, color type 6, non-interlaced
-The three existing runtime keys—planetMap111, planetMap122, and planetMap692—are assigned and used in main.ts. The two *-2.png files have no runtime references found. Their intended roles remain unknown; do not infer that they are variants of the referenced maps. All five proposed registry IDs remain provisional file identities, not gameplay planet IDs. The two unused files’ proposed texture keys require explicit confirmation.
+Existing public PNG	Bytes	Existing key/reference	Proposed per-file ID	Proposed logical path	Stage A disposition
+Map-111.png	1,261,169	planetMap111, loaded and used in main.ts	rt.planet-map.map-111	assets/Planets/Map-111.png	Include after explicit ID confirmation
+Map-111-2.png	1,446,567	No runtime reference found	rt.planet-map.map-111-2	assets/Planets/Map-111-2.png	Deferred; no registry entry, private copy, or bundle membership
+Map-122.png	1,175,688	planetMap122, loaded and used in main.ts	rt.planet-map.map-122	assets/Planets/Map-122.png	Include after explicit ID confirmation
+Map-122-2.png	1,416,526	No runtime reference found	rt.planet-map.map-122-2	assets/Planets/Map-122-2.png	Deferred; no registry entry, private copy, or bundle membership
+Map-692.png	2,671,838	planetMap692, loaded and used in main.ts	rt.planet-map.map-692	assets/Planets/Map-692.png	Include after explicit ID confirmation
+The proposed IDs are file-asset identities, not gameplay planet IDs. Preserve planetMap111, planetMap122, and planetMap692 exactly. Do not assume a purpose or parent-planet relationship for either unreferenced PNG. Do not assign those deferred files texture keys; their public copies remain untouched and unregistered.
 
-3. Approved bundle architecture and folder discovery
-The agreed bundles remain:
+Accordingly, the initial planets.bin contains only the three explicitly approved and registered PNGs. The two deferred files are excluded from migration and packaging until separately approved.
+
+3. Bundle architecture and discovery
+The approved bundle names and category grouping are:
 
 private/assets/ category	Bundle ID	Output
 Ships/	ships	public/assets/ships.bin
 Components/	components	public/assets/components.bin
 Turrets-Platforms/	turrets-platforms	public/assets/turrets-platforms.bin
 Planets/	planets	public/assets/planets.bin
-Nested directories recurse into their top-level category. Do not add numeric suffixes or combine categories.
+Nested directories recurse into their top-level category. No numeric suffixes or combined nonships.bin.
 
-Responsibilities remain distinct:
+Folders determine membership.
+Registry entries own stable IDs, logical paths, texture keys, aliases, and content types.
+The packager discovers/reconciles sources, derives bundle IDs, validates data, and generates outputs.
+The generated manifest records derived bundle IDs, paths, members, and fingerprints.
+A future listener only coordinates the one-shot packager; it does not duplicate packaging.
+Enumerate immediate category directories under private/assets/, then recurse. Reject unsafe paths, traversal, case-insensitive collisions, normalized category-name collisions, symbolic links, junctions/reparse points, and non-regular entries. Use lstat and Windows reparse-point checks rather than relying on stat, which follows links.
 
-Category folders determine bundle membership.
-Registry entries own asset IDs, logical paths, texture keys, aliases, and content types.
-The one-shot packager discovers/reconciles files, derives bundle IDs, validates data, and emits outputs.
-The generated manifest records bundle metadata, membership, and fingerprints.
-A future listener coordinates the same packager; it does not duplicate packaging.
-Normalization recommendation: support ASCII category names made of alphanumeric groups separated by spaces, _, or -; lowercase them and normalize separator runs to -. Reject non-ASCII and unsafe names rather than transliterating or renaming folders. Detect normalized-name and case-insensitive path collisions before publication.
+Files directly under private/assets/, outside a category directory, must fail explicitly; they may not be silently ignored.
 
-A category with no assets produces no bundle. New categories produce bundles only for registered, valid assets. Unregistered supported files, unsupported extensions, missing registered files, wrong content types, unsafe paths, symlinks/reparse points, and non-regular entries fail explicitly. Files placed directly under private/assets/, outside a category directory, must also fail; they must never be silently skipped.
+Normalization recommendation: permit ASCII category names with alphanumeric groups separated by spaces, _, or -; lowercase and normalize separator runs to hyphens. Reject non-ASCII and unsafe names; never transliterate, rename folders, or append suffixes.
 
-4. SVG and PNG validation under RTAB v1.0
-Keep RTAB at 0x0100, with the existing 64-byte outer header, 28-byte index header, 72-byte records, SHA-256 semantics, and compression = NONE. Store original SVG and PNG source bytes unchanged.
+Empty category directories emit no bundle.
+A new category emits a bundle only if it contains registered supported assets.
+Missing registered sources and unregistered SVG/PNG files fail.
+Any unsupported extension within a category fails with its path; it is not silently ignored.
+Wrong extension/content-type pairings and malformed files fail before publication.
+JSON and unknown types remain unsupported.
+4. RTAB v1.0 and PNG validation profile
+Keep RTAB at 0x0100: existing 64-byte outer header, 28-byte index header, 72-byte records, SHA-256 semantics, and compression = NONE. Store original SVG/PNG bytes unchanged. SVG record content type is 0; PNG is 1; JSON (2) and Unknown (3) remain unsupported.
 
-SVGs retain current UTF-8 XML, well-formedness, and SVG-root validation.
-PNG content type is 1; SVG is 0. JSON (2) and Unknown (3) remain unsupported.
-RTAB record type must match both the corresponding generated-manifest contentType and registry entry. Neither validator selection nor the manifest alone is sufficient evidence of consistency.
-Supported PNG profile and resource limits
-All five inspected PNGs are RGBA8 and non-interlaced. To keep decompression bounds precise, the recommended first profile supports only bit depth 8, color type 6 (RGBA), compression method 0, filter method 0, and interlace method 0. Reject any other profile from IHDR before invoking zlib. Adam7/interlacing is unsupported in Stage A; it may be proposed separately if required later.
+For each record, require its content type to equal both the corresponding manifest asset and registry entry. The content type is not merely a validator selector. Tests must cover SVG-record/PNG-metadata and PNG-record/SVG-metadata mismatches.
+
+PNG profile
+The five inspected PNGs are all RGBA8, non-interlaced. Stage A should accept only:
+
+Bit depth 8, color type 6 (RGBA)
+Compression method 0, filter method 0
+Interlace method 0
+Reject unsupported IHDR profiles, including Adam7, before decompression. Future support for other color types, bit depths, or interlace would require a separately defined and tested calculation profile.
 
 Proposed limits:
 
-Maximum dimensions: 4096×4096.
-Maximum compressed bytes: 8 MiB per file; 32 MiB aggregate.
-Maximum decoded pixel bytes: 64 MiB per image; 256 MiB aggregate.
-Maximum inflated scanline bytes: calculated per image as height × (1 + width × 4), capped at 64 MiB + 4096 bytes for one maximum-size image.
-Maximum aggregate inflated scanline bytes: 257 MiB.
-For accepted RGBA8 non-interlaced PNGs, compute those values with checked integer arithmetic from IHDR before decompression. Reject an image or aggregate that exceeds any limit. Stream zlib output with an explicit output cap; do not allocate an unbounded decoded buffer. Require exactly the calculated decompressed byte count and validate every row’s filter byte is in the PNG-defined range 0–4. This counts the filter byte separately from decoded pixel bytes.
+Dimensions: maximum 4096×4096.
+Compressed PNG size: maximum 8 MiB per file and 32 MiB aggregate.
+Decoded pixel bytes: maximum 64 MiB per image and 256 MiB aggregate.
+Inflated scanline data: calculate from IHDR as height × (1 + width × 4) for supported RGBA8 non-interlaced files, including one filter byte per row; cap per image at 64 MiB + 4096 bytes and aggregate at 257 MiB.
+Use checked integer arithmetic before decompression. Stream through a bounded inflater and stop if output exceeds the calculated size or configured aggregate. Do not allocate an unbounded decoded buffer. Require exactly the expected inflated byte count and validate row filter bytes as 0–4. Validate PNG signature, IHDR, chunk lengths/bounds, CRCs, ordering, required IDAT, zlib data, IEND termination and EOF. Reject invalid dimensions, malformed scanlines, unknown critical chunks, truncation, or trailing data.
 
-Validate signature, IHDR, chunk lengths/bounds, CRCs, ordering, required IDAT, and a zero-length IEND that ends exactly at EOF. Reject invalid dimensions, malformed/truncated zlib data, invalid scanlines, unknown critical chunks, and unexpected trailing bytes. Package the original PNG bytes; do not re-encode or add compression.
+PNG bytes enter the RTAB payload exactly as stored. Do not re-encode or add compression.
 
-5. Registry and manifest changes
-Recommendation, not an already approved schema change:
+SVG retains the existing UTF-8 XML, well-formedness, and SVG-root validation.
 
-Remove the production registry count fixed at 31.
-Remove authored per-asset bundleId values and the authored bundles table.
-Keep bundle IDs derived from folders and in generated manifest records only.
-Support SVG and PNG paths/types; reject JSON and unknown types.
-Preserve all 31 SVG identities, logical paths, texture keys, aliases, and source bytes.
-Keep the three required legacy alias mappings, while allowing additional valid aliases subject to collision checks.
-Add one registry entry per PNG file. Each PNG receives exactly one distinct asset ID; no asset ID represents a parent planet.
-Keep listSourceAssets() SVG-only. Ensure publicSvgManifest.ts remains exactly 31 entries and byte-identical; PNG entries must not enter the loose-SVG manifest.
-The current asset-registry.mjs hardcodes 31, requires .svg/SVG, and validates authored bundles. package-assets.mjs encodes SVG record types and validates every payload as SVG. Both must be extended; clean-clone validation must derive expected category membership from registry logical paths and generated folder rules.
+5. Registry, manifest, and runtime compatibility
+Current asset-registry.mjs hardcodes 31 entries, only accepts SVG, and validates authored bundles. package-assets.mjs serializes and validates only SVG. Stage A must:
 
-asset-roots.mjs already maps assets/... through the broad recursive private root. No Planets-specific source-root change is expected. The registry resolver’s SVG-only path/type validation is the part requiring extension.
+Remove the production count of 31 while asserting expected identities/counts in tests.
+Support SVG and PNG logical paths and content types; reject JSON and unknown.
+Remove authored per-asset bundleId and bundle table. Derive grouping from folders; keep bundleId only in generated manifest data.
+Preserve all 31 SVG IDs, paths, texture keys, aliases, and source bytes.
+Preserve the three required legacy alias mappings, while allowing additional valid aliases with collision checks.
+Add registry entries only for PNGs explicitly approved for Stage A. Each included file has exactly one ID.
+Keep listSourceAssets() SVG-only.
+Keep publicSvgManifest.ts byte-identical with exactly 31 entries; PNG entries must not appear in it.
+Validate clean-clone expected membership from registry logical paths and category rules.
+asset-roots.mjs already maps assets/... through the broad recursive private root. No Planets-specific source-root change is expected.
 
-Registry schema, generated manifest schema, and RTAB format versions are independent. Registry schema 1.1 and manifest schema 1.1 remain recommendations, not confirmed implementation decisions.
+Versioning recommendations, not confirmed: registry schema 1.1 for the registry-shape change; generated manifest schema 1.1 for the SVG/PNG contract. Keep both versions independent from RTAB 1.0.
 
-6. Planet-source migration and retry behavior
-Migrate the five public PNGs to mirrored paths under private/assets/Planets/, subject to resolution of the two unused files’ registry entries.
+6. Planet migration and idempotent retries
+Copy only the approved three PNGs to matching private/assets/Planets/ paths. Leave deferred Map-111-2.png and Map-122-2.png public and unregistered.
 
-The migration must:
+For every approved file:
 
-Inventory source paths, exact casing, byte counts, and SHA-256 hashes.
-Inspect every destination before copying.
-Stage each copy separately under a unique temporary directory outside private/assets/.
-Flush/close staged writes, then verify exact byte count and SHA-256 against the unchanged public source.
-Publish with no-overwrite semantics only after verification.
-Retry rules:
+Inventory source path, exact case, size, and SHA-256.
+Inspect the destination; reject case variants, non-regular targets, links, or conflicting content.
+Create staging on the same filesystem as the final private destination. Create the required private parent directories, then verify the stage and destination parent have matching filesystem/device identity before writing.
+Write to a unique staging file with exclusive creation, close/flush it, and verify exact size and SHA-256 against the unchanged public source.
+Publish using an atomic no-overwrite operation: create a hard link from the verified staged file to the final path. Hard-link creation fails if the destination already exists. If hard links are unsupported, fail closed; do not fall back to an overwriting rename or copy.
+Verify the final file’s size and hash, then remove only this transaction’s staging link/file.
+Retry semantics:
 
-If the final destination already exists with exact expected bytes and hash, accept it as already migrated without writing over it.
-If the final destination exists but differs, stop and preserve it.
-An incomplete or partial temporary copy is never a completed migration and is never published as if verified.
-A crash-left staging path is reported and left untouched unless its ownership and safe cleanup are unambiguous. A retry uses a new unique staging path.
-Public PNG sources are never removed or modified; the 31 private SVGs and their public copies remain unchanged.
-7. Stage A — one-shot implementation
-Reconfirm Git status and inventory the 31 SVGs and five PNGs.
-Run migration dry-run; resolve proposed PNG IDs and new texture keys before changing registry data.
-Migrate approved PNGs with hash-verified, no-overwrite publication.
-Update registry schema and metadata; validate there is no authored bundle authority.
-Discover and reconcile all four categories recursively.
-Build and validate RTAB bundles with content-type-aware validators.
-Generate and validate the manifest/schema and preserve the 31-entry SVG runtime manifest.
-Safely publish generated outputs and retire the obsolete nested Ships bundle only after successful commit of the new set.
-Verify clean-clone behavior is strictly read-only when private/ is absent.
-Expected existing SVG bundle inputs:
+Existing final destination with exact expected size and SHA-256: accept as already migrated without writing over it.
+Existing destination that differs: stop; preserve it.
+Partial/incomplete temp file: never treat as migrated and never publish it.
+Ambiguous crash-left staging paths: preserve and report for review; do not wildcard-clean.
+Public PNG sources and all 31 SVG sources remain untouched.
+7. Source lifecycle
+Entire private/ absent: perform strictly read-only clean-clone validation of the committed manifest/schema and all required bundles. Do not package, repair, recover, or write files.
+private/ exists and is complete: reconcile all registered supported sources and package.
+private/ exists but is incomplete: fail explicitly before output changes; never fall back to public sources.
+If an active lock, unfinished journal, or ambiguous transaction artifact exists, clean-clone validation remains read-only and reports failure instead of modifying it.
+Public SVGs and PNGs remain intact. No Phaser loading changes, runtime hot reload, or Phase 3C work.
 
-Bundle	Assets	Raw source bytes	RTAB bytes at current inputs
+8. Stage A implementation sequence
+Recheck Git status and exact source inventory.
+Confirm the three PNG IDs and whether the two unreferenced files remain deferred.
+Dry-run migration for only approved PNGs; apply hash-verified, same-filesystem, no-overwrite publication.
+Update registry schema/metadata and validate identities and aliases.
+Discover/reconcile all categories; build and validate four bundles.
+Verify the new root-level Ships payloads match the old nested bundle’s payloads.
+Generate and validate manifest/schema while preserving the 31-entry SVG runtime manifest.
+Publish transactionally under an exclusive lock.
+Remove the old nested Ships bundle only after the new output set is validated and committed.
+Test absent-private read-only behavior and present-incomplete failure behavior.
+Known SVG output sizes at current inputs:
+
+Bundle	Assets	Raw bytes	RTAB bytes
 ships.bin	10	110,711	111,817
 components.bin	19	74,319	76,407
 turrets-platforms.bin	2	27,960	28,296
-The Planets bundle will contain only PNGs approved and registered for this stage. Its output size will be measured from finalized IDs and exact RTAB serialization. Verify the Ships payloads remain byte-identical to the existing nested Ships bundle.
+The Planets bundle initially contains the approved subset only; its output size depends on final IDs and RTAB serialization.
 
-8. Publication journal, commit, and recovery
-Use a durable write-ahead transaction journal at a fixed repository-root location, for example .asset-package-transaction.jsonl, and add only that exact path to .gitignore. Do not put journal data under public/. Use exclusive creation, append-only transaction records, and flush each journal update to disk before the filesystem operation it authorizes. Output temp files are also flushed and hash-verified before publication. This is crash recovery, not a claim of multi-file crash atomicity.
+9. Exclusive lock, durable journal, and recovery
+Use a fixed ignored journal path and a separate exclusive lock file. Create the lock with exclusive-create semantics (open with wx) and hold its handle across recovery, source preparation, validation, publication, stale retirement, and journal cleanup. A second preparation process must fail before recovery or output inspection/mutation while the lock is held. Remove the lock only after closing the handle and verifying its transaction nonce matches this process.
 
-The journal records:
+The lock records a transaction ID, nonce, PID, host, and process-start identity for diagnostics. Age alone never establishes staleness. If the lock exists, stop. Do not auto-break it based only on timeout or timestamp. An operator must verify that the recorded process is no longer active and explicitly authorize lock removal; then recovery still validates the journal before any file operation.
 
-Transaction ID and stage/state.
-Every affected output destination.
-Prior existence and SHA-256 for each prior file.
-Exact transaction-owned temp and backup paths.
-Expected new output hashes.
-Pending stale-output retirement paths, with prior hashes.
-Prior and expected new manifest hashes.
+Journal records are append-only JSONL with transaction ID, monotonic sequence, operation intent/completion, and record checksum. Before every filesystem mutation, append and flush the complete intent record; after it, append and flush completion. The transaction plan includes:
+
+Every affected destination and whether a prior file existed, with prior hash.
+Exact transaction-owned temp and backup paths and expected hashes.
+Expected new output hashes and exact output paths.
+Old manifest and schema hashes; expected new manifest and schema hashes.
+Pending stale outputs, including public/assets/Ships/ships.bin and its prior hash.
 Whether the new manifest has been committed.
-Before beginning, validate the prior generated manifest and hashes. Refuse to overwrite any existing target not proven packager-owned by that prior valid manifest. Record the old nested public/assets/Ships/ships.bin as a pending stale retirement based on the prior manifest; do not depend on the new manifest to identify it.
+Recovery runs only after exclusive lock acquisition and before ordinary packaging. An incomplete trailing JSONL line, invalid JSON/checksum, sequence gap, unexpected transaction ID, missing journal phase, or malformed record is ambiguous: preserve all files and backups, report failure, and require review. Never truncate or repair the journal automatically.
 
-Publication order:
+Recovery-state table
+Recorded state and observed files	Recovery action
+Prior manifest/schema/bundles match recorded hashes; new temps match expected hashes; no output replacement occurred	Resume only if the journal records the exact next intent; otherwise stop.
+Manifest is still prior (or prior absence); some outputs are new and verified backups match prior hashes	Roll back only journaled paths to the complete prior set. Preserve old outputs and stale Ships bundle.
+Manifest is prior but schema or bundles are new, missing, or unknown	Restore only when every required prior backup/hash is present and the prior manifest/schema/bundle set validates after restoration; otherwise preserve all and stop.
+Manifest hash equals expected new hash	Do not assume commit from this alone. Validate new manifest, manifest schema, all four bundle paths, each bundle hash/content/records, category membership, and transaction state. If all pass, mark committed and proceed to stale retirement.
+New manifest is present but schema/bundle validation fails	Roll back only if the full prior set can be restored and validated from verified backups; otherwise stop and preserve all artifacts.
+New set validates; stale nested Ships file matches recorded prior hash and pending retirement intent	Move that exact file to its exact journaled backup path, then verify new set again before deleting the backup.
+Any destination, backup, temp, lock nonce, or stale path has unexpected content/hash or contradicts journal state	Stop. Preserve all files; do not guess, overwrite, or delete.
+Temp/backup exists without a valid matching journal record	Stop and report it. Never wildcard-delete or infer ownership.
+Before retiring stale outputs or deleting any backup, verify the new manifest, manifest schema, all four expected bundle paths, bundle hashes and RTAB contents, and journal transaction state. Old public/assets/Ships/ships.bin remains until this succeeds. If the process stops after publishing schema 1.1 but before manifest 1.1, the prior manifest marks the transaction uncommitted; rollback the schema and any changed bundles only from verified backups. Do not remove the nested Ships bundle.
 
-Create journal with the complete transaction plan and flush it.
-Write, flush, and verify all new bundle/schema temp files.
-Replace/backup existing outputs according to recorded hashes; publish bundles and schema.
-Publish the new manifest last. Its expected hash is the commit marker.
-Only after the new manifest is verified, retire the specific old Ships bundle by moving it to its journaled backup path.
-Verify all new outputs and the committed manifest, clean only transaction-listed backups/temps whose hashes and state match the journal, then remove the journal last.
-Recovery runs before ordinary packaging:
+A journal is a recovery aid, not a claim of multi-file crash atomicity or hardware power-loss durability. If recovery state is not exactly reconcilable, stop and preserve artifacts for manual review.
 
-If the current manifest hash equals the expected new hash, treat the output set as committed; finish only journaled stale retirement/cleanup after verifying exact paths and hashes.
-If the current manifest is still the prior hash (or prior absence), roll back to the prior set using only journal-listed backups and verified hashes. This handles interruption after publishing schema 1.1 but before publishing manifest 1.1.
-If a destination, backup, temp file, or manifest matches neither the recorded prior nor expected-new state, stop and report ambiguity; do not guess or overwrite.
-Never wildcard-delete bundles or temporary files. Report orphan temp/backup files not described by a valid journal and stop for review.
-A clean-clone path with private/ absent is strictly read-only. If it finds an unfinished journal or ambiguous transaction artifacts, it reports failure and requests recovery in source-available mode; it does not repair or remove files itself.
-This journal allows recovery from handled failures and common process interruptions, but cannot promise power-loss durability beyond filesystem guarantees. If filesystem state cannot be reconciled exactly with journal hashes, preserve all files and require manual review.
+10. Stage B, mods, and Phase 3C boundaries
+Stage B is separate and requires separate approval. It may add a listener for SVG/PNG changes, registry edits, directory changes, and renames. It must reuse Stage A APIs, debounce, serialize, coalesce events, rebuild only when safe, otherwise fully reconcile, preserve last valid outputs, and dispose on shutdown. Start with Vite’s watcher; claim Windows support only after platform tests. Add Chokidar only if those tests demonstrate need. predev and prebuild remain full reconciliation boundaries.
 
-9. Stage B, mod support, and Phase 3C boundaries
-Stage B remains a separate implementation and approval gate. It may add a listener for SVG/PNG changes, registry edits, directory changes, and renames; it will reuse Stage A APIs. It must debounce, serialize, coalesce, choose incremental rebuilds only when safe, otherwise fully reconcile, preserve last valid outputs, and dispose on Vite shutdown. Windows watcher support is not claimed until tested; start with Vite’s watcher and add Chokidar only if those tests demonstrate need. predev and prebuild remain full reconciliation boundaries.
+No mod discovery, installation, enablement, loading, merging, override/conflict resolution, Phaser runtime modification, hot reload, or Phase 3C work is included. Future mod sources remain independently owned; category grouping should be reusable across source roots.
 
-No mod discovery, installation, enablement, loading, merging, override/conflict resolution, Phaser runtime modification, hot reload, or Phase 3C work is included. Base/mod source ownership remains independent; future mod registries can be composed in memory and combined bundles generated from them.
-
-10. Exact files expected to change
-Stage A:
-
-asset-registry.json and asset-registry.mjs: schema, extensible count, SVG/PNG types, identities.
-package-assets.mjs: discovery, reconciliation, PNG validation, content-type consistency, clean-clone validation.
-prepare-assets.mjs: journal recovery, publication, stale-output handling.
-generate-public-svg-manifest.mjs: explicitly preserve SVG-only generation.
-.gitignore: ignore the exact journal path.
+11. Expected files and tests
+Stage A files
+asset-registry.json, asset-registry.mjs: schema, extensible count, approved PNG entries, content types, no authored bundle fields.
+package-assets.mjs: category discovery/reconciliation, SVG/PNG validation, RTAB type consistency, clean-clone checks.
+prepare-assets.mjs: lock, journal, recovery, publication, stale output handling.
+generate-public-svg-manifest.mjs: explicitly preserve SVG-only output.
 New scripts/migrate-planet-assets-private.mjs and tests/migrate-planet-assets-private.test.ts.
-package-assets.test.ts and public-svg-manifest.test.ts.
-MOD-ASSET-PACKAGING-AND-FUTURE-MOD-SUPPORT.md: align filenames and PNG support.
-Generated four bundles and manifest/schema; five private PNG copies.
-No expected change to asset-roots.mjs, main.ts, Game.ts, Planet.ts, generated publicSvgManifest.ts, public SVG/PNG sources, or private SVG sources.
+package-assets.test.ts, public-svg-manifest.test.ts.
+MOD-ASSET-PACKAGING-AND-FUTURE-MOD-SUPPORT.md: align filenames and approved SVG/PNG scope.
+Exact ignored lock/journal paths in .gitignore.
+Four generated bundles, generated manifest/schema, and private copies only for approved PNGs.
+No expected changes to asset-roots.mjs, main.ts, Game.ts, Planet.ts, the generated SVG runtime manifest, public source images, or private SVG sources.
 
-Stage B only after separate approval: new scripts/watch-assets.mjs, vite.config.mjs, and tests/watch-assets.test.ts.
-
-11. Tests and acceptance criteria
-Planet migration tests cover dry-run, exact paths/case, all approved SHA-256 comparisons, matching-existing retry, mismatched-existing refusal, partial temp copy, no-overwrite publication, and source preservation.
-Registry tests cover no fixed production count, duplicate IDs/keys/aliases/paths, required aliases, type/extension agreement, and rejection of authored bundles.
-Discovery tests cover all four categories, recursive nesting, empty categories, direct files under private/assets/, new categories, normalization collisions, unregistered PNG/SVG, unsupported extensions, missing files, traversal, links/reparse points, and non-regular entries.
-PNG tests cover allowed RGBA8 non-interlaced profile and limits; reject unsupported bit depth/color/interlace, excessive dimensions/bytes, bad signature/IHDR/chunk boundaries/CRC/order, invalid IDAT zlib/scanlines, missing IEND, and trailing data.
-RTAB tests verify original PNG bytes, SVG/PNG record type values, hashes, deterministic outputs, and content-type mismatches in both directions between record and manifest/registry.
-Publication tests inject failures at each transaction point, especially after schema but before manifest. Verify rollback/recovery, prior output preservation, exact stale Ships retirement, journal reconciliation, and fail-stop handling of ambiguous artifacts.
-Clean-clone tests verify read-only operation and four-bundle membership.
-Verify old Ships payloads are byte-identical, the runtime SVG manifest remains 31 entries and byte-identical, and no public source or Phaser loading changes.
-After Stage A approval, record a fresh npm test baseline and run focused tests, npx tsc --noEmit, npm run predev, and npm run build.
+Acceptance tests
+Migration: exact approved inventory, SHA-256, same filesystem, matching destination retry, differing destination refusal, incomplete temp behavior, no-overwrite publication.
+Registry: no fixed total, aliases and identities stable, duplicate detection, extension/type matching, authored bundle fields rejected.
+Discovery: four categories, recursive nesting, empty/new category behavior, direct-root files, unsupported extensions, missing/unregistered files, path/case collisions, links/reparse points and non-regular entries.
+PNG: supported RGBA8/non-interlaced profile, dimension/file/decoded/aggregate limits, chunk boundaries/CRC/order, zlib and scanlines, IEND/trailing bytes, exact payload preservation.
+RTAB: SVG/PNG content type values and hashes; both directions of record/manifest/registry type mismatch fail.
+Publication: concurrent preparation lock rejection; active versus stale lock behavior; valid, truncated, and corrupt journal cases; failures between schema and manifest; all recovery-table states; prior output and backup preservation; stale Ships retirement only after full new-set validation.
+Lifecycle: absent private/ is strictly read-only; present incomplete tree fails without public fallback.
+Verify old Ships payloads byte-identical, 31 SVG runtime entries byte-identical, public SVG/PNG sources unchanged, no Phaser changes.
+After future approval, establish a fresh npm test baseline, then focused tests, npx tsc --noEmit, npm run predev, and npm run build.
 12. Decisions and remaining confirmations
-Approved: four bundle names/grouping; no numeric suffixes or combined bundle; folder membership and registry metadata responsibilities; PNG support in RTAB v1.0; three existing Phaser keys unchanged; no public-source removal; Stage A/Stage B separation.
+Approved architecture: four bundle names and grouping; no numeric suffixes or combined bundle; folder-driven membership; registry-owned identities; RTAB v1.0 with SVG/PNG; preserve three existing Phaser keys and public sources; separate Stage A/Stage B and no Phase 3C.
 
-Still requiring confirmation before Stage A:
+Still to confirm before Stage A:
 
-Whether to register/package both currently unreferenced PNGs; if included, their purpose remains unknown and their new texture keys must be confirmed.
-Whether the five proposed PNG asset IDs are acceptable as provisional file identities.
-Whether registry schema should advance to 1.1; recommendation: yes.
-Whether generated manifest schema should advance to 1.1; recommendation: yes, independently of RTAB 1.0.
-Whether the proposed PNG limits and RGBA8/non-interlaced-only profile are acceptable.
-Whether Node’s built-in zlib is acceptable for bounded streaming validation.
-Whether the proposed ASCII category normalization rule is acceptable.
-Changes made in this revision: added an IHDR-specific PNG profile and derived scanline/decompression limits; specified a durable write-ahead publication journal with recovery before packaging and read-only clean-clone behavior; required cross-checking RTAB record types against manifest and registry; defined migration retry semantics for complete and incomplete copies; and clarified that deferred PNGs are excluded from both private migration and registry/bundle membership while their public copies remain untouched.
+Confirm the three proposed IDs for the currently referenced PNGs.
+Confirm the two unreferenced PNGs remain deferred, with no registry entries, private copies, or invented texture keys.
+Confirm registry schema 1.1; generated manifest schema may version independently.
+Confirm the proposed PNG profile/resource limits.
+Confirm use of Node’s built-in bounded streaming zlib validation.
+Confirm ASCII category normalization.
+Corrections in this revision: resolved deferral consistently across registry, migration, packaging, and file scope; restored all five proposed PNG ID/path mappings while assigning no keys to the deferred files; added an exclusive lock and fail-closed stale-lock/journal rules; defined recovery-state handling and validation before stale retirement or backup deletion; specified same-filesystem staging with hard-link no-overwrite publication; and made absent-private clean-clone validation read-only while incomplete private sources fail without public fallback.
 
-I’m stopping here for review. No implementation approval is assumed.
+No Stage A implementation approval is assumed.
