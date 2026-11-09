@@ -37,7 +37,7 @@ index 55837ae..1da08f0 100644
      const publicAssets = path.join(publicRoot, 'assets');
      const publicPlanets = path.join(publicAssets, 'Planets');
 diff --git a/scripts/package-assets.mjs b/scripts/package-assets.mjs
-index 3ca39dd..b54038e 100644
+index 3ca39dd..5a9d800 100644
 --- a/scripts/package-assets.mjs
 +++ b/scripts/package-assets.mjs
 @@ -4,7 +4,7 @@ import path from 'node:path';
@@ -70,7 +70,7 @@ index 3ca39dd..b54038e 100644
 
  async function loadValidatedInputs(projectRoot, registry) {
      const validatedAssets = [];
-+    let aggregatePngCompressedBytes = 0;
++    let aggregatePngFileBytes = 0;
      let aggregatePngDecodedBytes = 0;
      let aggregatePngScanlineBytes = 0;
      for (const asset of registry.assets) {
@@ -84,12 +84,12 @@ index 3ca39dd..b54038e 100644
                  throw new Error(`Fatal: private PNG source does not match its approved fingerprint: ${asset.logicalPath}`);
              }
              const pngResult = await validatePng(bytes, asset);
-+            aggregatePngCompressedBytes += pngResult.compressedBytes;
++            aggregatePngFileBytes += pngResult.fileBytes;
              aggregatePngDecodedBytes += pngResult.decodedPixelBytes;
              aggregatePngScanlineBytes += pngResult.scanlineBytes;
 -            assertPngAggregateDecodedLimits(
 +            assertPngAggregateLimits(
-+                aggregatePngCompressedBytes,
++                aggregatePngFileBytes,
                  aggregatePngDecodedBytes,
                  aggregatePngScanlineBytes,
                  'Planet PNG assets',
@@ -128,7 +128,7 @@ index 3ca39dd..b54038e 100644
      }
 
      const validatedBundles = [];
-+    let aggregatePngCompressedBytes = 0;
++    let aggregatePngFileBytes = 0;
 +    let aggregatePngDecodedBytes = 0;
 +    let aggregatePngScanlineBytes = 0;
      for (const bundle of manifest.bundles) {
@@ -144,12 +144,12 @@ index 3ca39dd..b54038e 100644
 +            if (!record.pngValidation) {
 +                continue;
 +            }
-+            aggregatePngCompressedBytes += record.pngValidation.compressedBytes;
++            aggregatePngFileBytes += record.pngValidation.fileBytes;
 +            aggregatePngDecodedBytes += record.pngValidation.decodedPixelBytes;
 +            aggregatePngScanlineBytes += record.pngValidation.scanlineBytes;
 +        }
 +        assertPngAggregateLimits(
-+            aggregatePngCompressedBytes,
++            aggregatePngFileBytes,
 +            aggregatePngDecodedBytes,
 +            aggregatePngScanlineBytes,
 +            'Committed planet PNG assets',
@@ -159,16 +159,16 @@ index 3ca39dd..b54038e 100644
      }
      return { manifest, validatedBundles };
 diff --git a/scripts/validate-png.mjs b/scripts/validate-png.mjs
-index 03e3ba1..1fc9eb5 100644
+index 03e3ba1..3125389 100644
 --- a/scripts/validate-png.mjs
 +++ b/scripts/validate-png.mjs
 @@ -21,6 +21,13 @@ export function assertPngAggregateDecodedLimits(decodedPixelBytes, inflatedScanl
      }
  }
 
-+export function assertPngAggregateLimits(compressedBytes, decodedPixelBytes, inflatedScanlineBytes, label, limits = PNG_LIMITS) {
-+    if (compressedBytes > limits.maxAggregateFileBytes) {
-+        throw new Error(`${label} exceeds the ${limits.maxAggregateFileBytes}-byte aggregate compressed PNG limit`);
++export function assertPngAggregateLimits(fileBytes, decodedPixelBytes, inflatedScanlineBytes, label, limits = PNG_LIMITS) {
++    if (fileBytes > limits.maxAggregateFileBytes) {
++        throw new Error(`${label} exceeds the ${limits.maxAggregateFileBytes}-byte aggregate PNG file-size limit`);
 +    }
 +    assertPngAggregateDecodedLimits(decodedPixelBytes, inflatedScanlineBytes, label, limits);
 +}
@@ -176,6 +176,23 @@ index 03e3ba1..1fc9eb5 100644
  const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
  const CRC_TABLE = new Uint32Array(256);
 
+@@ -79,7 +86,7 @@ export async function validatePng(bytes, asset) {
+         fail(asset, 'is shorter than the minimum PNG structure');
+     }
+     if (bytes.length > PNG_LIMITS.maxFileBytes) {
+-        fail(asset, `exceeds the ${PNG_LIMITS.maxFileBytes}-byte compressed file limit`);
++        fail(asset, `exceeds the ${PNG_LIMITS.maxFileBytes}-byte PNG file-size limit`);
+     }
+     if (!bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+         fail(asset, 'has an invalid PNG signature');
+@@ -208,6 +215,7 @@ export async function validatePng(bytes, asset) {
+     return {
+         width,
+         height,
++        fileBytes: bytes.length,
+         compressedBytes,
+         decodedPixelBytes,
+         scanlineBytes
 diff --git a/tests/asset-output-publisher.test.ts b/tests/asset-output-publisher.test.ts
 index 047ca51..54e2374 100644
 --- a/tests/asset-output-publisher.test.ts
@@ -240,7 +257,7 @@ index bd119da..0d60974 100644
      await createFixture(async (projectRoot) => {
          let links = 0;
 diff --git a/tests/package-assets.test.ts b/tests/package-assets.test.ts
-index fbe09ad..5993dd9 100644
+index fbe09ad..79a976d 100644
 --- a/tests/package-assets.test.ts
 +++ b/tests/package-assets.test.ts
 @@ -17,7 +17,7 @@ import {
@@ -373,16 +390,35 @@ index fbe09ad..5993dd9 100644
          await writeFile(path.join(privatePlanetRoot, asset.fileName), source);
          await writeFile(path.join(publicPlanetRoot, asset.fileName), source);
      }
-@@ -402,7 +498,7 @@ test('real planet PNGs match the approved fingerprints and bounded RGBA8 non-int
+@@ -397,24 +493,22 @@ test('folder-derived packaging emits three SVG RTAB 1.0 bundles and a planet PNG
+ });
+
+ test('real planet PNGs match the approved fingerprints and bounded RGBA8 non-interlaced profile', async () => {
+-    let aggregateCompressedBytes = 0;
++    let aggregateFileBytes = 0;
+     let aggregateDecodedPixelBytes = 0;
      let aggregateInflatedScanlineBytes = 0;
      for (const asset of PLANET_ASSETS) {
          const bytes = await readFile(path.join(REPOSITORY_ROOT, 'public', ...asset.logicalPath.split('/')));
 -        const privateBytes = await readFile(path.join(REPOSITORY_ROOT, 'private', ...asset.logicalPath.split('/')));
-+        const privateBytes = await readFile(path.join(REPOSITORY_ROOT, 'public', ...asset.logicalPath.split('/')));
          assert.equal(hash(bytes), asset.sourceSha256, `Public fingerprint differs: ${asset.logicalPath}`);
-         assert.deepEqual(privateBytes, bytes, `Private and public PNG differ: ${asset.logicalPath}`);
+-        assert.deepEqual(privateBytes, bytes, `Private and public PNG differ: ${asset.logicalPath}`);
          const result = await validatePng(bytes, asset);
-@@ -939,6 +1035,48 @@ test('preparation preserves existing locks and journals; clean-clone mode reject
+         assert.equal(result.width, 2000);
+         assert.equal(result.height, 1000);
+         assert.equal(result.decodedPixelBytes, 8_000_000);
+         assert.equal(result.scanlineBytes, 8_001_000);
+-        aggregateCompressedBytes += result.compressedBytes;
++        aggregateFileBytes += result.fileBytes;
+         aggregateDecodedPixelBytes += result.decodedPixelBytes;
+         aggregateInflatedScanlineBytes += result.scanlineBytes;
+     }
+-    assert.ok(aggregateCompressedBytes <= PNG_LIMITS.maxAggregateFileBytes);
++    assert.ok(aggregateFileBytes <= PNG_LIMITS.maxAggregateFileBytes);
+     assert.ok(aggregateDecodedPixelBytes <= PNG_LIMITS.maxAggregateDecodedPixelBytes);
+     assert.ok(aggregateInflatedScanlineBytes <= PNG_LIMITS.maxAggregateScanlineBytes);
+ });
+@@ -939,6 +1033,48 @@ test('preparation preserves existing locks and journals; clean-clone mode reject
      }
  });
 
@@ -413,10 +449,10 @@ index fbe09ad..5993dd9 100644
 +    });
 +});
 +
-+test('PNG aggregate limits cover compressed bytes, decoded pixels, and inflated scanlines', () => {
++test('PNG aggregate limits cover full file sizes, decoded pixels, and inflated scanlines', () => {
 +    assert.throws(
 +        () => assertPngAggregateLimits(PNG_LIMITS.maxAggregateFileBytes + 1, 0, 0, 'test PNG set'),
-+        /aggregate compressed PNG limit/
++        /aggregate PNG file-size limit/
 +    );
 +    assert.throws(
 +        () => assertPngAggregateLimits(0, PNG_LIMITS.maxAggregateDecodedPixelBytes + 1, 0, 'test PNG set'),
@@ -431,4 +467,59 @@ index fbe09ad..5993dd9 100644
  test('generated manifest schema 1.2 permits SVG and PNG without redundant bundle membership arrays', () => {
      const schema = getManifestSchema();
      assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
+diff --git a/tests/validate-png.test.ts b/tests/validate-png.test.ts
+index eacf9f8..f90f909 100644
+--- a/tests/validate-png.test.ts
++++ b/tests/validate-png.test.ts
+@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
+ import { deflateSync } from 'node:zlib';
+ import { test } from 'node:test';
+ import {
++    assertPngAggregateLimits,
+     assertPngAggregateDecodedLimits,
+     PNG_LIMITS,
+     validatePng
+@@ -150,7 +151,7 @@ test('enforces dimensions, compressed-file size, and exact inflated scanline len
+     await assert.rejects(validatePng(png({ height: PNG_LIMITS.maxHeight + 1 }), ASSET), /dimensions outside/);
+
+     const oversizedAncillary = chunk('tEXt', Buffer.alloc(PNG_LIMITS.maxFileBytes));
+-    await assert.rejects(validatePng(Buffer.concat([SIGNATURE, header(), oversizedAncillary]), ASSET), /compressed file limit/);
++    await assert.rejects(validatePng(Buffer.concat([SIGNATURE, header(), oversizedAncillary]), ASSET), /PNG file-size limit/);
+
+     await assert.rejects(
+         validatePng(png({ raw: Buffer.alloc(4) }), ASSET),
+@@ -158,6 +159,33 @@ test('enforces dimensions, compressed-file size, and exact inflated scanline len
+     );
+ });
+
++test('counts ancillary PNG chunks toward aggregate full-file-size limit', async () => {
++    const baselineBytes = png();
++    const withAncillaryChunk = png({ beforeIdat: [chunk('tEXt', Buffer.alloc(64))] });
++    const baselineMetrics = await validatePng(baselineBytes, ASSET);
++    const expandedMetrics = await validatePng(withAncillaryChunk, ASSET);
++    assert.equal(baselineMetrics.compressedBytes, expandedMetrics.compressedBytes);
++    assert.equal(expandedMetrics.fileBytes, withAncillaryChunk.length);
++    assert.ok(expandedMetrics.fileBytes > baselineMetrics.fileBytes);
++
++    const limits = {
++        maxAggregateFileBytes: baselineMetrics.fileBytes + 1,
++        maxAggregateDecodedPixelBytes: 0,
++        maxAggregateScanlineBytes: 0
++    };
++    assert.doesNotThrow(() => assertPngAggregateLimits(
++        baselineMetrics.fileBytes,
++        0,
++        0,
++        'test PNG set',
++        limits
++    ));
++    assert.throws(
++        () => assertPngAggregateLimits(expandedMetrics.fileBytes, 0, 0, 'test PNG set', limits),
++        /aggregate PNG file-size limit/
++    );
++});
++
+ test('accepts scanline filter bytes 0 through 4 and rejects filter 5', async () => {
+     for (let filter = 0; filter <= 4; filter += 1) {
+         assert.equal((await validatePng(png({ raw: Buffer.from([filter, 0, 0, 0, 0]) }), ASSET)).scanlineBytes, 5);
 (END)
