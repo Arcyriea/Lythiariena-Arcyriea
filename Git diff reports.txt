@@ -1,0 +1,2089 @@
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+PS C:\GitHub\Redemptis-Tiariea> git diff
+warning: in the working copy of 'public/assets/asset-manifest-schema.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/assets/asset-manifest.json', LF will be replaced by CRLF the next time Git touches it
+diff --git a/docs/BINARY-ENCRYPT-MIGRATION.md b/docs/BINARY-ENCRYPT-MIGRATION.md
+index 97ddd58..72d4683 100644
+--- a/docs/BINARY-ENCRYPT-MIGRATION.md
++++ b/docs/BINARY-ENCRYPT-MIGRATION.md
+@@ -73,4 +73,16 @@ Test and verification criteria
+ - Phase 7: npm run predev succeeds with private/ present (generates) and with private/ absent (validates committed bundles only, fails clearly if a bundle is missing).
+ - Phase 8: game boots from committed .bin alone; public-svg-manifest.test.ts still passes; new test asserts provider resolves the same keys including legacy aliases central-hull, human-dreadnought, alien-interceptor.
+ - Phase 9: per-category git rm public/assets/<cat>/*.svg after verification; build still works from .bin.
+-- Phase 10: simulated clean clone runs npm run dev/build from committed bundles only; dist/ scan finds zero uncompiled SVG source; git check-ignore private/ succeeds.
+\ No newline at end of file
++- Phase 10: simulated clean clone runs npm run dev/build from committed bundles only; dist/ scan finds zero uncompiled SVG source; git check-ignore private/ succeeds.
++
++## Phase 3B.3 Stage A — Folder-derived packaging
++
++The one-shot packager derives category membership from immediate subdirectories of `private/assets/` and recursively includes registered files within each category. The current outputs are `ships.bin`, `components.bin`, `turrets-platforms.bin`, and `planets.bin`; nested source folders do not create additional bundles. The registry owns asset identity and runtime metadata, while folder names alone determine bundle membership.
++
++Registry schema 1.1 and generated manifest schema 1.1 are independent from the unchanged RTAB 1.0 binary format. The registry contains the 31 existing SVG assets and only three approved planet PNGs (`Map-111.png`, `Map-122.png`, and `Map-692.png`); `Map-111-2.png` and `Map-122-2.png` remain public, unregistered, and outside private bundles. The generated Phaser SVG manifest remains SVG-only with 31 entries, and runtime texture keys and loading behavior are unchanged.
++
++PNG validation accepts only non-interlaced RGBA8 images using compression and filter method 0, with dimensions up to 4096×4096, a maximum compressed file size of 8 MiB, a 32 MiB aggregate compressed limit, a 64 MiB per-image decoded scanline limit, and a 256 MiB aggregate decoded limit. PNG payload bytes are preserved; the packager does not re-encode images.
++
++Preparation uses an exclusive process lock and a durable JSONL transaction journal. It validates staged outputs, publishes bundle/schema/runtime-manifest outputs before the manifest, verifies the complete new output set, and only then retires manifest-owned stale bundles and backups. Recovery runs under the same lock; malformed or truncated journals, unexpected file contents, and ambiguous orphaned artifacts are preserved for manual inspection rather than wildcard-deleted.
++
++Stage A does not add a filesystem listener, runtime hot reload, mod discovery/loading, Phaser bundle loading, or Phase 3C behavior.
+\ No newline at end of file
+diff --git a/public/assets/Ships/ships.bin b/public/assets/Ships/ships.bin
+deleted file mode 100644
+index b10aaf3..0000000
+Binary files a/public/assets/Ships/ships.bin and /dev/null differ
+diff --git a/public/assets/asset-manifest-schema.json b/public/assets/asset-manifest-schema.json
+index 2abe1f9..177512a 100644
+--- a/public/assets/asset-manifest-schema.json
++++ b/public/assets/asset-manifest-schema.json
+@@ -10,7 +10,7 @@
+   ],
+   "properties": {
+     "manifestSchemaVersion": {
+-      "const": "1.0"
++      "const": "1.1"
+     },
+     "assets": {
+       "type": "array",
+@@ -33,7 +33,7 @@
+           },
+           "logicalPath": {
+             "type": "string",
+-            "pattern": "^assets/.+\\.svg$"
++            "pattern": "^assets/.+\\.(svg|png)$"
+           },
+           "textureKey": {
+             "type": "string",
+@@ -46,7 +46,10 @@
+             }
+           },
+           "contentType": {
+-            "const": "SVG"
++            "enum": [
++              "SVG",
++              "PNG"
++            ]
+           },
+           "sourceSha256": {
+             "type": "string",
+diff --git a/public/assets/asset-manifest.json b/public/assets/asset-manifest.json
+index 618a9b2..f09cb67 100644
+--- a/public/assets/asset-manifest.json
++++ b/public/assets/asset-manifest.json
+@@ -1,6 +1,206 @@
+ {
+-  "manifestSchemaVersion": "1.0",
++  "manifestSchemaVersion": "1.1",
+   "assets": [
++    {
++      "assetId": "rt.component.aistiaria.connector-module",
++      "logicalPath": "assets/Components/Aistiaria/07_connector_module.svg",
++      "textureKey": "public-components-aistiaria-07_connector_module",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "562bc1941d0097351c02d74533081d0bff16b95964fa6271c04ccd0d248914f7",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.hex-cockpit",
++      "logicalPath": "assets/Components/Aistiaria/02_hex_cockpit.svg",
++      "textureKey": "public-components-aistiaria-02_hex_cockpit",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "08f665c8d5b130483a4dcd766d954bc1d2cca02e592233f408e89347828e1639",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.nose-section",
++      "logicalPath": "assets/Components/Aistiaria/05_nose_section.svg",
++      "textureKey": "public-components-aistiaria-05_nose_section",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "ae37ce9f734b9da3a94d8fe2a911b8d4aaa5a6b4214e87ddd277aa049b3a0f46",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.rear-engine-pod",
++      "logicalPath": "assets/Components/Aistiaria/04_rear_engine_pod.svg",
++      "textureKey": "public-components-aistiaria-04_rear_engine_pod",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "0ed5c55c0054879649ed1da4094fb248cd30cd52bdb018399ee4545a7688a9a6",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.side-hull-angular",
++      "logicalPath": "assets/Components/Aistiaria/01_side_hull_angular.svg",
++      "textureKey": "public-components-aistiaria-01_side_hull_angular",
++      "aliases": [
++        "central-hull"
++      ],
++      "contentType": "SVG",
++      "sourceSha256": "1afc819d6c99284d6fe1b8e760d6be054e6396b2d4307859cd1ad56f5035c027",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.side-wing",
++      "logicalPath": "assets/Components/Aistiaria/03_side_wing.svg",
++      "textureKey": "public-components-aistiaria-03_side_wing",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "846c4d08183d454a86407a4978ca546eb4a39690a00893171c2ac434dd125d16",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.swept-wing",
++      "logicalPath": "assets/Components/Aistiaria/06_swept_wing.svg",
++      "textureKey": "public-components-aistiaria-06_swept_wing",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "e22b88a5768aa55c66e30225f2a2fede22044a0c65f822dae269694f9feed88d",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.aistiaria.tail-fuselage",
++      "logicalPath": "assets/Components/Aistiaria/08_tail_fuselage.svg",
++      "textureKey": "public-components-aistiaria-08_tail_fuselage",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "25d4249e8c65ae28393bbfddd68be4063962df3123ac2a823d3df14383377820",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-1",
++      "logicalPath": "assets/Components/Yutiarin/Part 1.svg",
++      "textureKey": "public-components-yutiarin-part-1",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "2f05417a81343545a1f6e344b007803049b3742c5c67d6e45707f8d2986fd016",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-10",
++      "logicalPath": "assets/Components/Yutiarin/Part 10.svg",
++      "textureKey": "public-components-yutiarin-part-10",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "38b14b962c861723785fff57f660185c7f71cab0722e4537f98cd248b398efc5",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-2",
++      "logicalPath": "assets/Components/Yutiarin/Part 2.svg",
++      "textureKey": "public-components-yutiarin-part-2",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "5a5d87281babd8be95c022314741c77a11d2b1c5bee6d2e4c368d028c2b604b8",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-3",
++      "logicalPath": "assets/Components/Yutiarin/Part 3.svg",
++      "textureKey": "public-components-yutiarin-part-3",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "ea691ac6bccef6052e0ae0a151cc7282435eb95760a3825cb1aedce0f150b8d1",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-4",
++      "logicalPath": "assets/Components/Yutiarin/Part 4.svg",
++      "textureKey": "public-components-yutiarin-part-4",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "20af89485958dd70cfd6eda6700e657a6e930856b465f6958fa3f658b6261ad3",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-5",
++      "logicalPath": "assets/Components/Yutiarin/Part 5.svg",
++      "textureKey": "public-components-yutiarin-part-5",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "daa1457f842e38d36d2f051f0073bfed8c06e2fa610b354f947afe3ba2ddca4e",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-6",
++      "logicalPath": "assets/Components/Yutiarin/Part 6.svg",
++      "textureKey": "public-components-yutiarin-part-6",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "78e523b0cf0fb5f1a6c156934a0e402db71dc72f56241e39ec49ce62e070ee14",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-7",
++      "logicalPath": "assets/Components/Yutiarin/Part 7.svg",
++      "textureKey": "public-components-yutiarin-part-7",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "c754e16e05d1723049f99e3f32b5cab4292122acecc0260bd882a7894626edcd",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-8",
++      "logicalPath": "assets/Components/Yutiarin/Part 8.svg",
++      "textureKey": "public-components-yutiarin-part-8",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "783a93697ab4411de69d9ddd800c10c23c0d4ada7c49941f618e9a6f3d03837b",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.part-9",
++      "logicalPath": "assets/Components/Yutiarin/Part 9.svg",
++      "textureKey": "public-components-yutiarin-part-9",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "1da7a1a0063aabb1789218662794ef8177ce9fd5de4d41e4b23cbe790bea1db2",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.component.yutiarin.wing-1",
++      "logicalPath": "assets/Components/Yutiarin/Wing 1.svg",
++      "textureKey": "public-components-yutiarin-wing-1",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "01dc4c33b840e6263f74a23aec806107c745a00b6be2dabbeda32dc9c434d422",
++      "bundleId": "components"
++    },
++    {
++      "assetId": "rt.planet-map.map-111",
++      "logicalPath": "assets/Planets/Map-111.png",
++      "textureKey": "planetMap111",
++      "aliases": [],
++      "contentType": "PNG",
++      "sourceSha256": "83d39b7a7603f574f47cee57c4d9b12b0b468b469fece0ffe7765d921f067ea1",
++      "bundleId": "planets"
++    },
++    {
++      "assetId": "rt.planet-map.map-122",
++      "logicalPath": "assets/Planets/Map-122.png",
++      "textureKey": "planetMap122",
++      "aliases": [],
++      "contentType": "PNG",
++      "sourceSha256": "35f8af626f4d7162a2926ef3dad6cdec36610cfd6f3acac86a1547d764081f7e",
++      "bundleId": "planets"
++    },
++    {
++      "assetId": "rt.planet-map.map-692",
++      "logicalPath": "assets/Planets/Map-692.png",
++      "textureKey": "planetMap692",
++      "aliases": [],
++      "contentType": "PNG",
++      "sourceSha256": "43652c4465b35a1e3ae4bf99bbb75308359179c9d1b3fd8711d38c806b1472a8",
++      "bundleId": "planets"
++    },
+     {
+       "assetId": "rt.ship.alien-interceptor",
+       "logicalPath": "assets/Ships/alien-interceptor.svg",
+@@ -10,7 +210,7 @@
+       ],
+       "contentType": "SVG",
+       "sourceSha256": "4ad596d3d8337fadb3cf66d6cc7b579835539b52659935a39586099ca96b30f2",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.alien-leviathan",
+@@ -19,7 +219,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "e1a489bbbfeb8cc66a4172b34c4a22fac6565cdf2446dd7a4437c2832087686d",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.alien-mothership",
+@@ -28,7 +228,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "8adfa6b0288fd9626754d6ea766120e6ed558d62370e330648a89c3184049a87",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.curved-corvette",
+@@ -37,7 +237,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "21d5805e2204bc28be873cf5890024a9fa6adb5bf522e4f7b6e423bcdebf9e6c",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.faceted-cruiser",
+@@ -46,7 +246,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "95f73e94890f3729118bd89e9e1205d5110f7c6da3daa5665c7e3a531f4b312f",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.human-dreadnought",
+@@ -57,7 +257,7 @@
+       ],
+       "contentType": "SVG",
+       "sourceSha256": "27b77d19908ecd4a4080a79f7a3c9ddd6bb1392f17bd11a8c9acd476a663dec5",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.human-frigate",
+@@ -66,7 +266,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "d34b8c71d6e2ae1517f248f7907e1bae5839ad931b4877684e242d89036efd33",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.void-dreadnought",
+@@ -75,7 +275,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "d2dfe8f364b70bacf578bff96b6ca4bdf5def217994ac2768d1ea003f83f3906",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.yutiarin-kinetic-lance-frigate",
+@@ -84,7 +284,7 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "6e4fec41118c5562f93a41e7b0ee6b0847920f5df75e84a3429c7b2ad24b7782",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
+     },
+     {
+       "assetId": "rt.ship.yutiarin-starblade-destroyer",
+@@ -93,16 +293,55 @@
+       "aliases": [],
+       "contentType": "SVG",
+       "sourceSha256": "1d125a5e8f109dd50a77d0ad77f2d96b13c393624c8f16d9d9b6cfb42ad39f35",
+-      "bundleId": "ships1"
++      "bundleId": "ships"
++    },
++    {
++      "assetId": "rt.turret.yutiarin-defense-turret",
++      "logicalPath": "assets/Turrets-Platforms/Yutiarin-Defense Turret.svg",
++      "textureKey": "public-turrets-platforms-yutiarin-defense-turret",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "9deccb3f924209885c8a99ca7347a34db540317b691a5b774f9925ef48936dc8",
++      "bundleId": "turrets-platforms"
++    },
++    {
++      "assetId": "rt.turret.yutiarin-perimeter-turret",
++      "logicalPath": "assets/Turrets-Platforms/Yutiarin-Perimeter Turret.svg",
++      "textureKey": "public-turrets-platforms-yutiarin-perimeter-turret",
++      "aliases": [],
++      "contentType": "SVG",
++      "sourceSha256": "696f9aacb67fdcdaea984da77b144952556ba1d0d6f3309f4b8edfdc36e9f75e",
++      "bundleId": "turrets-platforms"
+     }
+   ],
+   "bundles": [
+     {
+-      "bundleId": "ships1",
+-      "bundleFile": "/assets/Ships/ships.bin",
++      "bundleId": "components",
++      "bundleFile": "/assets/components.bin",
++      "formatVersion": "1.0",
++      "assetCount": 19,
++      "bundleSha256": "c765204592f66b0431a41b7c20a3f4ff58559757883aa39f0a81ad864a1928df"
++    },
++    {
++      "bundleId": "planets",
++      "bundleFile": "/assets/planets.bin",
++      "formatVersion": "1.0",
++      "assetCount": 3,
++      "bundleSha256": "ef64dfb9a6491965d5b3870918f317f9a5632fb32eeb5c4be812b1f1829dc120"
++    },
++    {
++      "bundleId": "ships",
++      "bundleFile": "/assets/ships.bin",
+       "formatVersion": "1.0",
+       "assetCount": 10,
+       "bundleSha256": "5a88e030dfbd0cecc8d2b51acf7e80dce2bdb36862838ba0ea113d84707fd65b"
++    },
++    {
++      "bundleId": "turrets-platforms",
++      "bundleFile": "/assets/turrets-platforms.bin",
++      "formatVersion": "1.0",
++      "assetCount": 2,
++      "bundleSha256": "943e47cfed1ff6e28bc4bca70efe0f42c9d1403b8e2a17c24643f8a61c9e126e"
+     }
+   ]
+ }
+diff --git a/scripts/asset-registry.json b/scripts/asset-registry.json
+index a0b12bd..329d213 100644
+--- a/scripts/asset-registry.json
++++ b/scripts/asset-registry.json
+@@ -1,5 +1,5 @@
+ {
+-  "registrySchemaVersion": "1.0",
++  "registrySchemaVersion": "1.1",
+   "assets": [
+     {
+       "assetId": "rt.component.aistiaria.side-hull-angular",
+@@ -134,85 +134,96 @@
+       "aliases": [],
+       "contentType": "SVG"
+     },
++    {
++      "assetId": "rt.planet-map.map-111",
++      "logicalPath": "assets/Planets/Map-111.png",
++      "textureKey": "planetMap111",
++      "aliases": [],
++      "contentType": "PNG"
++    },
++    {
++      "assetId": "rt.planet-map.map-122",
++      "logicalPath": "assets/Planets/Map-122.png",
++      "textureKey": "planetMap122",
++      "aliases": [],
++      "contentType": "PNG"
++    },
++    {
++      "assetId": "rt.planet-map.map-692",
++      "logicalPath": "assets/Planets/Map-692.png",
++      "textureKey": "planetMap692",
++      "aliases": [],
++      "contentType": "PNG"
++    },
+     {
+       "assetId": "rt.ship.yutiarin-kinetic-lance-frigate",
+       "logicalPath": "assets/Ships/Yutiarin Kinetic Lance Frigate.svg",
+       "textureKey": "public-ships-yutiarin-kinetic-lance-frigate",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.alien-interceptor",
+       "logicalPath": "assets/Ships/alien-interceptor.svg",
+       "textureKey": "public-ships-alien-interceptor",
+       "aliases": ["alien-interceptor"],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.alien-leviathan",
+       "logicalPath": "assets/Ships/alien-leviathan.svg",
+       "textureKey": "public-ships-alien-leviathan",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.alien-mothership",
+       "logicalPath": "assets/Ships/alien-mothership.svg",
+       "textureKey": "public-ships-alien-mothership",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.curved-corvette",
+       "logicalPath": "assets/Ships/curved-corvette.svg",
+       "textureKey": "public-ships-curved-corvette",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.faceted-cruiser",
+       "logicalPath": "assets/Ships/faceted-cruiser.svg",
+       "textureKey": "public-ships-faceted-cruiser",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.human-dreadnought",
+       "logicalPath": "assets/Ships/human-dreadnought.svg",
+       "textureKey": "public-ships-human-dreadnought",
+       "aliases": ["human-dreadnought"],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.human-frigate",
+       "logicalPath": "assets/Ships/human-frigate.svg",
+       "textureKey": "public-ships-human-frigate",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.void-dreadnought",
+       "logicalPath": "assets/Ships/void-dreadnought.svg",
+       "textureKey": "public-ships-void-dreadnought",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.ship.yutiarin-starblade-destroyer",
+       "logicalPath": "assets/Ships/yutiarin-starblade-destroyer.svg",
+       "textureKey": "public-ships-yutiarin-starblade-destroyer",
+       "aliases": [],
+-      "contentType": "SVG",
+-      "bundleId": "ships1"
++      "contentType": "SVG"
+     },
+     {
+       "assetId": "rt.turret.yutiarin-defense-turret",
+@@ -228,10 +239,5 @@
+       "aliases": [],
+       "contentType": "SVG"
+     }
+-  ],
+-  "bundles": {
+-    "ships1": {
+-      "bundleFile": "/assets/Ships/ships.bin"
+-    }
+-  }
++  ]
+ }
+diff --git a/scripts/asset-registry.mjs b/scripts/asset-registry.mjs
+index 4b00196..810ec69 100644
+--- a/scripts/asset-registry.mjs
++++ b/scripts/asset-registry.mjs
+@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
+ import { ASSET_ROOTS, resolvePhysicalDir } from './asset-roots.mjs';
+
+ const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+-const REGISTRY_ASSET_COUNT = 31;
+ const REQUIRED_ALIASES = new Map([
+     ['assets/Ships/human-dreadnought.svg', 'human-dreadnought'],
+     ['assets/Ships/alien-interceptor.svg', 'alien-interceptor'],
+@@ -15,54 +14,38 @@ function fail(message) {
+     throw new Error(`Invalid asset registry: ${message}`);
+ }
+
+-function isSafeLogicalPath(logicalPath) {
++function isSafeLogicalPath(logicalPath, contentType) {
++    const extension = contentType === 'SVG' ? '.svg' : contentType === 'PNG' ? '.png' : null;
+     return typeof logicalPath === 'string'
++        && extension !== null
+         && logicalPath.startsWith('assets/')
+-        && logicalPath.toLowerCase().endsWith('.svg')
++        && logicalPath.endsWith(extension)
+         && !logicalPath.includes('\\')
+         && logicalPath.split('/').every((segment) => segment && segment !== '.' && segment !== '..');
+ }
+
+-export function validateAssetRegistry(registry, { expectedAssetCount } = {}) {
+-    if (!registry || registry.registrySchemaVersion !== '1.0') {
+-        fail('registrySchemaVersion must be "1.0"');
++export function validateAssetRegistry(registry) {
++    if (!registry || registry.registrySchemaVersion !== '1.1') {
++        fail('registrySchemaVersion must be "1.1"');
+     }
+     if (!Array.isArray(registry.assets) || registry.assets.length === 0) {
+         fail('assets must be a non-empty array');
+     }
+-    if (!registry.bundles || typeof registry.bundles !== 'object' || Array.isArray(registry.bundles)) {
+-        fail('bundles must be an object');
+-    }
+-    if (expectedAssetCount !== undefined && registry.assets.length !== expectedAssetCount) {
+-        fail(`expected ${expectedAssetCount} assets, found ${registry.assets.length}`);
++    if ('bundles' in registry) {
++        fail('bundle membership is derived from source folders and must not be declared in the registry');
+     }
+
+     const ids = new Set();
+     const paths = new Set();
+     const keys = new Map();
+     const aliases = new Map();
+-    const bundleMembers = new Map();
+-    const bundleFiles = new Set();
+-
+-    for (const [bundleId, bundle] of Object.entries(registry.bundles)) {
+-        if (!/^[a-zA-Z0-9._-]+$/.test(bundleId)) {
+-            fail(`invalid bundle ID "${bundleId}"`);
+-        }
+-        if (!bundle || typeof bundle.bundleFile !== 'string'
+-            || !bundle.bundleFile.startsWith('/assets/')
+-            || bundle.bundleFile.includes('\\')
+-            || bundle.bundleFile.split('/').slice(1).some((part) => !part || part === '.' || part === '..')
+-            || !bundle.bundleFile.toLowerCase().endsWith('.bin')) {
+-            fail(`bundle "${bundleId}" must declare a safe root-relative .bin bundleFile`);
+-        }
+-        if (bundleFiles.has(bundle.bundleFile.toLowerCase())) {
+-            fail(`duplicate bundle output path "${bundle.bundleFile}"`);
+-        }
+-        bundleFiles.add(bundle.bundleFile.toLowerCase());
+-        bundleMembers.set(bundleId, 0);
+-    }
+
+     for (const asset of registry.assets) {
++        if (!asset || Object.keys(asset).some((key) => (
++            !['assetId', 'logicalPath', 'textureKey', 'aliases', 'contentType'].includes(key)
++        ))) {
++            fail('assets must contain only asset identity and runtime metadata fields');
++        }
+         if (!asset || typeof asset.assetId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(asset.assetId)) {
+             fail('every asset must have a non-empty namespaced assetId using letters, digits, dot, underscore, or hyphen');
+         }
+@@ -71,7 +54,10 @@ export function validateAssetRegistry(registry, { expectedAssetCount } = {}) {
+         }
+         ids.add(asset.assetId);
+
+-        if (!isSafeLogicalPath(asset.logicalPath)) {
++        if (asset.contentType !== 'SVG' && asset.contentType !== 'PNG') {
++            fail(`unsupported content type "${asset.contentType}" for asset "${asset.assetId}"`);
++        }
++        if (!isSafeLogicalPath(asset.logicalPath, asset.contentType)) {
+             fail(`asset "${asset.assetId}" has an invalid logicalPath`);
+         }
+         if (paths.has(asset.logicalPath.toLowerCase())) {
+@@ -102,15 +88,6 @@ export function validateAssetRegistry(registry, { expectedAssetCount } = {}) {
+             aliases.set(normalizedAlias, asset.assetId);
+         }
+
+-        if (asset.contentType !== 'SVG') {
+-            fail(`unsupported content type "${asset.contentType}" for asset "${asset.assetId}"`);
+-        }
+-        if (asset.bundleId !== undefined) {
+-            if (!bundleMembers.has(asset.bundleId)) {
+-                fail(`asset "${asset.assetId}" references undeclared bundle "${asset.bundleId}"`);
+-            }
+-            bundleMembers.set(asset.bundleId, bundleMembers.get(asset.bundleId) + 1);
+-        }
+     }
+
+     for (const [aliasPath, alias] of REQUIRED_ALIASES) {
+@@ -131,16 +108,10 @@ export function validateAssetRegistry(registry, { expectedAssetCount } = {}) {
+         }
+     }
+
+-    for (const [bundleId, count] of bundleMembers) {
+-        if (count === 0) {
+-            fail(`bundle "${bundleId}" has no assigned assets`);
+-        }
+-    }
+-
+     return registry;
+ }
+
+-export async function readAssetRegistry(projectRoot = PROJECT_ROOT, options = {}) {
++export async function readAssetRegistry(projectRoot = PROJECT_ROOT) {
+     const registryPath = path.join(projectRoot, 'scripts', 'asset-registry.json');
+     let content;
+     try {
+@@ -156,14 +127,13 @@ export async function readAssetRegistry(projectRoot = PROJECT_ROOT, options = {}
+         throw new Error(`Could not parse asset registry at ${registryPath}: ${error.message}`);
+     }
+
+-    return validateAssetRegistry(registry, {
+-        expectedAssetCount: options.expectedAssetCount ?? REGISTRY_ASSET_COUNT
+-    });
++    return validateAssetRegistry(registry);
+ }
+
+ export function resolveAssetSource(logicalPath, projectRoot = PROJECT_ROOT) {
+     const root = resolvePhysicalDir(logicalPath);
+-    if (!root || !isSafeLogicalPath(logicalPath)) {
++    const contentType = /\.svg$/i.test(logicalPath) ? 'SVG' : /\.png$/i.test(logicalPath) ? 'PNG' : null;
++    if (!root || !contentType || !isSafeLogicalPath(logicalPath, contentType)) {
+         throw new Error(`Could not resolve canonical source for logical asset "${logicalPath}"`);
+     }
+
+diff --git a/scripts/generate-public-svg-manifest.mjs b/scripts/generate-public-svg-manifest.mjs
+index 26043bf..1a68163 100644
+--- a/scripts/generate-public-svg-manifest.mjs
++++ b/scripts/generate-public-svg-manifest.mjs
+@@ -1,4 +1,4 @@
+-import { readdir, readFile, mkdir, stat, writeFile } from 'node:fs/promises';
++import { readdir, readFile, mkdir, lstat, writeFile } from 'node:fs/promises';
+ import { createHash } from 'node:crypto';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+@@ -34,12 +34,14 @@ function encodePublicUrl(relativePath) {
+
+ async function discoverRegisteredAssets(projectRoot) {
+     const registry = await readAssetRegistry(projectRoot);
+-    const assets = [...registry.assets].sort((left, right) => comparePaths(left.logicalPath, right.logicalPath));
++    const assets = registry.assets
++        .filter((asset) => asset.contentType === 'SVG')
++        .sort((left, right) => comparePaths(left.logicalPath, right.logicalPath));
+     for (const asset of assets) {
+         const sourcePath = resolveAssetSource(asset.logicalPath, projectRoot);
+         try {
+-            const sourceStat = await stat(sourcePath);
+-            if (!sourceStat.isFile()) {
++            const sourceStat = await lstat(sourcePath);
++            if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) {
+                 throw new Error('not a file');
+             }
+         } catch (error) {
+diff --git a/scripts/migrate-assets-private.mjs b/scripts/migrate-assets-private.mjs
+index e3b2dc3..63f5246 100644
+--- a/scripts/migrate-assets-private.mjs
++++ b/scripts/migrate-assets-private.mjs
+@@ -183,8 +183,9 @@ async function readRegularFile(root, relativePath, label) {
+
+ async function planMigration(projectRoot) {
+     const registry = await readAssetRegistry(projectRoot);
+-    if (registry.assets.length !== EXPECTED_ASSET_COUNT) {
+-        fail(`expected ${EXPECTED_ASSET_COUNT} registry assets, found ${registry.assets.length}`);
++    const svgAssets = registry.assets.filter((asset) => asset.contentType === 'SVG');
++    if (svgAssets.length !== EXPECTED_ASSET_COUNT) {
++        fail(`expected ${EXPECTED_ASSET_COUNT} registered SVG assets, found ${svgAssets.length}`);
+     }
+
+     const assetsRoot = path.join(projectRoot, 'public', 'assets');
+@@ -202,7 +203,7 @@ async function planMigration(projectRoot) {
+     const mappingSource = await readFile(mappingPath, 'utf8');
+     const mapping = inspectSourceRootMapping(mappingSource);
+
+-    const expectedLogicalPaths = registry.assets.map((asset) => asset.logicalPath.slice('assets/'.length));
++    const expectedLogicalPaths = svgAssets.map((asset) => asset.logicalPath.slice('assets/'.length));
+     const publicPaths = await walkSvgFiles(assetsRoot);
+     compareInventory(publicPaths, expectedLogicalPaths, 'public/assets SVG inventory');
+
+@@ -215,7 +216,7 @@ async function planMigration(projectRoot) {
+     assertUniqueCaseInsensitive(privatePaths, 'private/assets SVG inventory');
+
+     const privateByLower = new Map(privatePaths.map((item) => [item.toLocaleLowerCase('en-US'), item]));
+-    const registryByLogicalPath = new Map(registry.assets.map((asset) => [
++    const registryByLogicalPath = new Map(svgAssets.map((asset) => [
+         asset.logicalPath.slice('assets/'.length),
+         asset
+     ]));
+@@ -233,7 +234,7 @@ async function planMigration(projectRoot) {
+     }
+
+     const records = [];
+-    for (const asset of registry.assets) {
++    for (const asset of svgAssets) {
+         const relativePath = asset.logicalPath.slice('assets/'.length);
+         const publicFile = await readRegularFile(assetsRoot, relativePath, 'public source');
+         const publicHash = sha256(publicFile.bytes);
+@@ -289,7 +290,7 @@ async function planMigration(projectRoot) {
+     }
+
+     return {
+-        registry,
++        registry: { ...registry, assets: svgAssets },
+         records,
+         copyRecords,
+         mappingPath,
+diff --git a/scripts/package-assets.mjs b/scripts/package-assets.mjs
+index 737bb19..86f41db 100644
+--- a/scripts/package-assets.mjs
++++ b/scripts/package-assets.mjs
+@@ -1,9 +1,10 @@
+ import { createHash, timingSafeEqual } from 'node:crypto';
+-import { readFile, stat } from 'node:fs/promises';
++import { lstat, readFile, readdir } from 'node:fs/promises';
+ import path from 'node:path';
+ import saxes from 'saxes';
+ import { fileURLToPath } from 'node:url';
+ import { readAssetRegistry, resolveAssetSource, PROJECT_ROOT } from './asset-registry.mjs';
++import { PNG_LIMITS, validatePng } from './validate-png.mjs';
+
+ const HEADER_SIZE = 64;
+ const INDEX_HEADER_SIZE = 28;
+@@ -14,6 +15,9 @@ const HEADER_FLAGS = 0x0003;
+ const UINT32_MAX = 0xffffffffn;
+ const JSON_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
+ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
++const CONTENT_TYPE_CODES = Object.freeze({ SVG: 0, PNG: 1 });
++const MAX_AGGREGATE_PNG_BYTES = PNG_LIMITS.maxAggregateFileBytes;
++const MAX_AGGREGATE_PNG_DECODED_BYTES = PNG_LIMITS.maxAggregateDecodedBytes;
+
+ function sha256(bytes) {
+     return createHash('sha256').update(bytes).digest();
+@@ -148,7 +152,7 @@ function createBundle(bundleId, bundleFile, assets) {
+         indexBuffer.writeBigUInt64LE(nextPayloadOffset, recordStart + 8);
+         indexBuffer.writeBigUInt64LE(payloadSize, recordStart + 16);
+         indexBuffer.writeBigUInt64LE(payloadSize, recordStart + 24);
+-        indexBuffer.writeUInt16LE(0, recordStart + 32);
++        indexBuffer.writeUInt16LE(CONTENT_TYPE_CODES[asset.contentType], recordStart + 32);
+         indexBuffer.writeUInt16LE(0, recordStart + 34);
+         indexBuffer.writeUInt32LE(0, recordStart + 36);
+         sha256(asset.bytes).copy(indexBuffer, recordStart + 40);
+@@ -193,7 +197,7 @@ function buildManifestSchema() {
+         additionalProperties: false,
+         required: ['manifestSchemaVersion', 'assets', 'bundles'],
+         properties: {
+-            manifestSchemaVersion: { const: '1.0' },
++            manifestSchemaVersion: { const: '1.1' },
+             assets: {
+                 type: 'array',
+                 items: {
+@@ -202,10 +206,10 @@ function buildManifestSchema() {
+                     required: ['assetId', 'logicalPath', 'textureKey', 'aliases', 'contentType', 'sourceSha256', 'bundleId'],
+                     properties: {
+                         assetId: { type: 'string', minLength: 1 },
+-                        logicalPath: { type: 'string', pattern: '^assets/.+\\.svg$' },
++                        logicalPath: { type: 'string', pattern: '^assets/.+\\.(svg|png)$' },
+                         textureKey: { type: 'string', minLength: 1 },
+                         aliases: { type: 'array', items: { type: 'string' } },
+-                        contentType: { const: 'SVG' },
++                        contentType: { enum: ['SVG', 'PNG'] },
+                         sourceSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+                         bundleId: { type: 'string', minLength: 1 }
+                     }
+@@ -243,37 +247,144 @@ function safeBundlePath(projectRoot, bundleFile) {
+     return outputPath;
+ }
+
++function normalizeCategoryName(name) {
++    if (!/^[A-Za-z0-9]+(?:[ _-][A-Za-z0-9]+)*$/.test(name)) {
++        throw new Error(`Unsafe asset category directory name "${name}"; category names must be ASCII letters, digits, spaces, underscores, or hyphens`);
++    }
++    return name.toLowerCase().split(/[ _-]+/).filter(Boolean).join('-');
++}
++
++async function readSafeDirectory(directory) {
++    const directoryStat = await lstat(directory);
++    if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
++        throw new Error(`Asset source entry is not a real directory: ${directory}`);
++    }
++    const entries = await readdir(directory, { withFileTypes: true });
++    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
++    for (const entry of entries) {
++        const entryPath = path.join(directory, entry.name);
++        const info = await lstat(entryPath);
++        if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) {
++            throw new Error(`Asset source entry must be a regular file or directory, not a link or special file: ${entryPath}`);
++        }
++    }
++    return entries;
++}
++
++async function discoverCategoryAssets(projectRoot, registry) {
++    const privateRoot = path.join(projectRoot, 'private');
++    const assetsRoot = path.join(projectRoot, 'private', 'assets');
++    const privateInfo = await lstat(privateRoot);
++    if (privateInfo.isSymbolicLink() || !privateInfo.isDirectory()) {
++        throw new Error(`Private source root is not a real directory: ${privateRoot}`);
++    }
++    const rootEntries = await readSafeDirectory(assetsRoot);
++    const registeredByPath = new Map(registry.assets.map((asset) => [asset.logicalPath, asset]));
++    const registeredByLowerPath = new Map(registry.assets.map((asset) => [asset.logicalPath.toLowerCase(), asset.logicalPath]));
++    const normalizedCategories = new Map();
++    const discoveredByPath = new Map();
++    const categories = [];
++
++    for (const entry of rootEntries) {
++        if (!entry.isDirectory()) {
++            throw new Error(`Asset files must be inside a top-level category directory: ${path.join(assetsRoot, entry.name)}`);
++        }
++        const bundleId = normalizeCategoryName(entry.name);
++        const priorCategory = normalizedCategories.get(bundleId);
++        if (priorCategory) {
++            throw new Error(`Asset category names "${priorCategory}" and "${entry.name}" collide after normalization to "${bundleId}"`);
++        }
++        normalizedCategories.set(bundleId, entry.name);
++
++        const category = { name: entry.name, bundleId, assets: [] };
++        async function walk(directory, relativeDirectory) {
++            for (const child of await readSafeDirectory(directory)) {
++                const childRelative = `${relativeDirectory}/${child.name}`;
++                const childPath = path.join(directory, child.name);
++                if (child.isDirectory()) {
++                    await walk(childPath, childRelative);
++                    continue;
++                }
++
++                const logicalPath = `assets/${entry.name}${childRelative}`;
++                const registered = registeredByPath.get(logicalPath);
++                if (!registered) {
++                    const caseVariant = registeredByLowerPath.get(logicalPath.toLowerCase());
++                    if (caseVariant) {
++                        throw new Error(`Asset source path casing differs from registry: expected "${caseVariant}", found "${logicalPath}"`);
++                    }
++                    throw new Error(`Unregistered asset source file: ${logicalPath}`);
++                }
++                discoveredByPath.set(logicalPath, registered);
++                category.assets.push(registered);
++            }
++        }
++        await walk(path.join(assetsRoot, entry.name), '');
++        if (category.assets.length > 0) {
++            categories.push(category);
++        }
++    }
++
++    for (const asset of registry.assets) {
++        const relative = asset.logicalPath.slice('assets/'.length);
++        if (!relative.includes('/')) {
++            throw new Error(`Registered asset must be inside a top-level category directory: ${asset.logicalPath}`);
++        }
++        if (!discoveredByPath.has(asset.logicalPath)) {
++            throw new Error(`Fatal: could not find canonical source for asset ${asset.assetId}: ${asset.logicalPath}`);
++        }
++    }
++    return { assetsRoot, categories };
++}
++
+ async function loadValidatedInputs(projectRoot, registry) {
+     const validatedAssets = [];
++    let aggregatePngBytes = 0;
++    let aggregatePngDecodedBytes = 0;
+     for (const asset of registry.assets) {
+-        if (asset.contentType !== 'SVG') {
++        if (!Object.hasOwn(CONTENT_TYPE_CODES, asset.contentType)) {
+             throw new Error(`Fatal: unsupported content type ${asset.contentType} for asset ${asset.assetId}`);
+         }
+         const sourcePath = resolveAssetSource(asset.logicalPath, projectRoot);
+         let fileStat;
+         try {
+-            fileStat = await stat(sourcePath, { bigint: true });
++            fileStat = await lstat(sourcePath, { bigint: true });
+         } catch (error) {
+             throw new Error(`Fatal: could not find canonical source for asset ${asset.assetId}: ${asset.logicalPath} (${error.message})`);
+         }
+-        if (!fileStat.isFile()) {
++        if (fileStat.isSymbolicLink() || !fileStat.isFile()) {
+             throw new Error(`Fatal: canonical source for asset ${asset.assetId} is not a file: ${asset.logicalPath}`);
+         }
+         if (fileStat.size === 0n) {
+             throw new Error(`Fatal: asset ${asset.logicalPath} is a zero-byte file`);
+         }
+-        if (fileStat.size > UINT32_MAX) {
+-            throw new Error(`Fatal: asset ${asset.logicalPath} exceeds the v1 maximum size of ${UINT32_MAX} bytes`);
++        const maxFileSize = asset.contentType === 'PNG' ? BigInt(PNG_LIMITS.maxFileBytes) : UINT32_MAX;
++        if (fileStat.size > maxFileSize) {
++            throw new Error(`Fatal: asset ${asset.logicalPath} exceeds the maximum size for ${asset.contentType} (${maxFileSize} bytes)`);
+         }
+         const bytes = await readFile(sourcePath);
+         if (BigInt(bytes.length) !== fileStat.size) {
+             throw new Error(`Fatal: canonical source changed while reading asset ${asset.logicalPath}`);
+         }
+-        decodeSvg(bytes, asset);
++        let pngMetrics = null;
++        if (asset.contentType === 'SVG') {
++            decodeSvg(bytes, asset);
++        } else {
++            aggregatePngBytes += bytes.length;
++            if (aggregatePngBytes > MAX_AGGREGATE_PNG_BYTES) {
++                throw new Error(`Fatal: aggregate PNG source size exceeds ${MAX_AGGREGATE_PNG_BYTES} bytes`);
++            }
++            pngMetrics = validatePng(bytes, asset);
++            aggregatePngDecodedBytes += pngMetrics.scanlineBytes;
++            if (aggregatePngDecodedBytes > MAX_AGGREGATE_PNG_DECODED_BYTES) {
++                throw new Error(`Fatal: aggregate PNG decoded data exceeds ${MAX_AGGREGATE_PNG_DECODED_BYTES} bytes`);
++            }
++        }
+         validatedAssets.push({
+             ...asset,
+             bytes,
+-            sourceSha256: sha256Hex(bytes)
++            sourceSha256: sha256Hex(bytes),
++            pngMetrics
+         });
+     }
+     return validatedAssets;
+@@ -281,18 +392,23 @@ async function loadValidatedInputs(projectRoot, registry) {
+
+ export async function createAssetPackageOutputs({ projectRoot = PROJECT_ROOT } = {}) {
+     const registry = await readAssetRegistry(projectRoot);
++    const { categories } = await discoverCategoryAssets(projectRoot, registry);
+     const validatedAssets = await loadValidatedInputs(projectRoot, registry);
+     const outputFiles = new Map();
+     const manifestAssets = [];
+     const manifestBundles = [];
+
+-    for (const [bundleId, bundle] of Object.entries(registry.bundles)) {
+-        const members = validatedAssets.filter((asset) => asset.bundleId === bundleId);
+-        const bundleResult = createBundle(bundleId, bundle.bundleFile, members);
+-        outputFiles.set(safeBundlePath(projectRoot, bundle.bundleFile), bundleResult.bytes);
++    for (const category of categories) {
++        const bundleId = category.bundleId;
++        const bundleFile = `/assets/${bundleId}.bin`;
++        const members = category.assets.map((asset) => (
++            validatedAssets.find((validated) => validated.assetId === asset.assetId)
++        ));
++        const bundleResult = createBundle(bundleId, bundleFile, members);
++        outputFiles.set(safeBundlePath(projectRoot, bundleFile), bundleResult.bytes);
+         manifestBundles.push({
+             bundleId,
+-            bundleFile: bundle.bundleFile,
++            bundleFile,
+             formatVersion: '1.0',
+             assetCount: members.length,
+             bundleSha256: bundleResult.bundleSha256
+@@ -305,13 +421,13 @@ export async function createAssetPackageOutputs({ projectRoot = PROJECT_ROOT } =
+                 aliases: asset.aliases,
+                 contentType: asset.contentType,
+                 sourceSha256: asset.sourceSha256,
+-                bundleId
++                bundleId: category.bundleId
+             });
+         }
+     }
+
+     const manifest = {
+-        manifestSchemaVersion: '1.0',
++        manifestSchemaVersion: '1.1',
+         assets: manifestAssets.sort((left, right) => left.assetId.localeCompare(right.assetId)),
+         bundles: manifestBundles.sort((left, right) => left.bundleId.localeCompare(right.bundleId))
+     };
+@@ -328,7 +444,7 @@ export async function createAssetPackageOutputs({ projectRoot = PROJECT_ROOT } =
+         assertDigest(sha256(bundleBytes), Buffer.from(bundle.bundleSha256, 'hex'), `Generated bundle "${bundle.bundleId}"`);
+         const expectedAssets = manifest.assets
+             .filter((asset) => asset.bundleId === bundle.bundleId)
+-            .map((asset) => ({ assetId: asset.assetId }))
++            .map((asset) => ({ assetId: asset.assetId, contentType: asset.contentType, logicalPath: asset.logicalPath }))
+             .sort((left, right) => (
+                 left.assetId < right.assetId ? -1 : left.assetId > right.assetId ? 1 : 0
+             ));
+@@ -439,6 +555,8 @@ export function validateRtabBundle(bytes, bundle, expectedAssets) {
+     let expectedStringOffsetCursor = 0n;
+     let expectedPayloadOffset = 0n;
+     let previousId = null;
++    let aggregatePngBytes = 0;
++    let aggregatePngDecodedBytes = 0;
+
+     for (let recordIndex = 0; recordIndex < entryCount; recordIndex += 1) {
+         const recordOffset = INDEX_HEADER_SIZE + recordIndex * RECORD_SIZE;
+@@ -455,7 +573,9 @@ export function validateRtabBundle(bytes, bundle, expectedAssets) {
+         if (idOffset !== expectedStringOffsetCursor || idOffset + idLength > stringTableSizeBig) {
+             throw new Error('RTAB asset ID string ranges must be contiguous and within the string table');
+         }
+-        if (contentType !== 0) {
++        const contentTypeName = Object.entries(CONTENT_TYPE_CODES)
++            .find(([, code]) => code === contentType)?.[0];
++        if (!contentTypeName) {
+             throw new Error(`Unsupported RTAB content type ${contentType}`);
+         }
+         if (compressionMethod !== 0) {
+@@ -465,7 +585,7 @@ export function validateRtabBundle(bytes, bundle, expectedAssets) {
+             throw new Error('RTAB record flags must be zero');
+         }
+         if (storedSize === 0n || storedSize !== originalSize || storedSize > UINT32_MAX) {
+-            throw new Error('RTAB SVG payload size is invalid');
++            throw new Error('RTAB payload size is invalid');
+         }
+         if (assetPayloadOffset !== expectedPayloadOffset) {
+             throw new Error('RTAB payload records must be contiguous and ordered');
+@@ -497,8 +617,28 @@ export function validateRtabBundle(bytes, bundle, expectedAssets) {
+         const expectedPayloadHash = index.subarray(recordOffset + 40, recordOffset + 72);
+         assertDigest(sha256(assetPayload), expectedPayloadHash, `Payload for "${assetId}"`);
+         const expectedAsset = expectedAssets.find((asset) => asset.assetId === assetId);
+-        decodeSvg(assetPayload, expectedAsset ?? { logicalPath: assetId });
+-        records.push({ assetId, bytes: assetPayload });
++        if (!expectedAsset) {
++            throw new Error(`RTAB asset "${assetId}" has no matching manifest metadata`);
++        }
++        if (expectedAsset.contentType !== contentTypeName) {
++            throw new Error(`RTAB content type for "${assetId}" does not match manifest content type "${expectedAsset.contentType}"`);
++        }
++        let decodedBytes = 0;
++        if (contentTypeName === 'SVG') {
++            decodeSvg(assetPayload, expectedAsset);
++        } else {
++            const pngMetrics = validatePng(assetPayload, expectedAsset);
++            decodedBytes = pngMetrics.scanlineBytes;
++            aggregatePngBytes += assetPayload.length;
++            aggregatePngDecodedBytes += pngMetrics.scanlineBytes;
++            if (aggregatePngBytes > MAX_AGGREGATE_PNG_BYTES) {
++                throw new Error(`RTAB bundle "${bundle.bundleId}" exceeds the aggregate PNG source size limit`);
++            }
++            if (aggregatePngDecodedBytes > MAX_AGGREGATE_PNG_DECODED_BYTES) {
++                throw new Error(`RTAB bundle "${bundle.bundleId}" exceeds the aggregate PNG decoded-data limit`);
++            }
++        }
++        records.push({ assetId, bytes: assetPayload, contentType: contentTypeName, decodedBytes });
+         expectedStringOffsetCursor += idLength;
+         expectedPayloadOffset += storedSize;
+     }
+@@ -525,18 +665,34 @@ function assertOnlyKeys(value, expectedKeys, label) {
+ }
+
+ function validateManifest(manifest, registry) {
+-    if (!manifest || manifest.manifestSchemaVersion !== '1.0'
++    if (!manifest || manifest.manifestSchemaVersion !== '1.1'
+         || !Array.isArray(manifest.assets) || !Array.isArray(manifest.bundles)) {
+         throw new Error('RTAB asset manifest has an invalid shape or manifestSchemaVersion');
+     }
+     assertOnlyKeys(manifest, ['manifestSchemaVersion', 'assets', 'bundles'], 'RTAB asset manifest');
+
+-    const expectedAssets = registry.assets.filter((asset) => asset.bundleId);
+-    if (manifest.assets.length !== expectedAssets.length) {
+-        throw new Error('RTAB asset manifest does not contain exactly the currently packaged assets');
++    const expectedBundleByAssetId = new Map();
++    const expectedBundles = new Map();
++    for (const asset of registry.assets) {
++        const categoryName = asset.logicalPath.split('/')[1];
++        const bundleId = normalizeCategoryName(categoryName);
++        const bundleFile = `/assets/${bundleId}.bin`;
++        expectedBundleByAssetId.set(asset.assetId, bundleId);
++        expectedBundles.set(bundleId, {
++            bundleId,
++            bundleFile,
++            assets: [...(expectedBundles.get(bundleId)?.assets ?? []), asset]
++        });
++    }
++    if (manifest.assets.length !== registry.assets.length) {
++        throw new Error('RTAB asset manifest does not contain exactly the registered assets');
+     }
++
+     const manifestAssetsById = new Map(manifest.assets.map((asset) => [asset.assetId, asset]));
+-    for (const expected of expectedAssets) {
++    if (manifestAssetsById.size !== manifest.assets.length) {
++        throw new Error('RTAB asset manifest contains duplicate asset IDs');
++    }
++    for (const expected of registry.assets) {
+         const actual = manifestAssetsById.get(expected.assetId);
+         assertOnlyKeys(
+             actual,
+@@ -546,28 +702,31 @@ function validateManifest(manifest, registry) {
+         if (!actual || actual.logicalPath !== expected.logicalPath
+             || actual.textureKey !== expected.textureKey
+             || actual.contentType !== expected.contentType
+-            || actual.bundleId !== expected.bundleId
++            || actual.bundleId !== expectedBundleByAssetId.get(expected.assetId)
+             || JSON.stringify(actual.aliases) !== JSON.stringify(expected.aliases)) {
+             throw new Error(`RTAB manifest metadata does not match registry asset "${expected.assetId}"`);
+         }
+         assertHexDigest(actual.sourceSha256, `source for "${expected.assetId}"`);
+     }
+
+-    if (manifest.bundles.length !== Object.keys(registry.bundles).length) {
+-        throw new Error('RTAB manifest does not contain exactly the declared bundles');
++    if (manifest.bundles.length !== expectedBundles.size) {
++        throw new Error('RTAB manifest does not contain exactly the non-empty source categories');
++    }
++    const manifestBundlesById = new Map(manifest.bundles.map((bundle) => [bundle.bundleId, bundle]));
++    if (manifestBundlesById.size !== manifest.bundles.length) {
++        throw new Error('RTAB asset manifest contains duplicate bundle IDs');
+     }
+-    for (const [bundleId, expected] of Object.entries(registry.bundles)) {
++    for (const [bundleId, expected] of expectedBundles) {
+         const actual = manifest.bundles.find((bundle) => bundle.bundleId === bundleId);
+         assertOnlyKeys(
+             actual,
+             ['bundleId', 'bundleFile', 'formatVersion', 'assetCount', 'bundleSha256'],
+             `RTAB manifest bundle "${bundleId}"`
+         );
+-        const members = expectedAssets.filter((asset) => asset.bundleId === bundleId);
+         if (!actual || actual.bundleFile !== expected.bundleFile
+             || actual.formatVersion !== '1.0'
+-            || actual.assetCount !== members.length) {
+-            throw new Error(`RTAB manifest bundle metadata does not match registry bundle "${bundleId}"`);
++            || actual.assetCount !== expected.assets.length) {
++            throw new Error(`RTAB manifest bundle metadata does not match derived category "${bundleId}"`);
+         }
+         assertHexDigest(actual.bundleSha256, `bundle "${bundleId}"`);
+     }
+@@ -588,10 +747,12 @@ export async function validateCommittedAssetOutputs({ projectRoot = PROJECT_ROOT
+     }
+     validateManifest(manifest, registry);
+     if (JSON.stringify(schema) !== JSON.stringify(buildManifestSchema())) {
+-        throw new Error('RTAB asset manifest schema does not match the v1.0 schema');
++        throw new Error('RTAB asset manifest schema does not match the 1.1 manifest schema');
+     }
+
+     const validatedBundles = [];
++    let aggregatePngBytes = 0;
++    let aggregatePngDecodedBytes = 0;
+     for (const bundle of manifest.bundles) {
+         const bundlePath = safeBundlePath(projectRoot, bundle.bundleFile);
+         let bytes;
+@@ -603,11 +764,27 @@ export async function validateCommittedAssetOutputs({ projectRoot = PROJECT_ROOT
+         assertDigest(sha256(bytes), Buffer.from(bundle.bundleSha256, 'hex'), `Bundle "${bundle.bundleId}"`);
+         const expectedAssets = manifest.assets
+             .filter((asset) => asset.bundleId === bundle.bundleId)
+-            .map((asset) => ({ assetId: asset.assetId }))
++            .map((asset) => ({
++                assetId: asset.assetId,
++                contentType: asset.contentType,
++                logicalPath: asset.logicalPath
++            }))
+             .sort((left, right) => (
+                 left.assetId < right.assetId ? -1 : left.assetId > right.assetId ? 1 : 0
+             ));
+-        validateRtabBundle(bytes, bundle, expectedAssets);
++        const records = validateRtabBundle(bytes, bundle, expectedAssets);
++        for (const record of records) {
++            if (record.contentType === 'PNG') {
++                aggregatePngBytes += record.bytes.length;
++                aggregatePngDecodedBytes += record.decodedBytes;
++            }
++        }
++        if (aggregatePngBytes > MAX_AGGREGATE_PNG_BYTES) {
++            throw new Error(`Committed RTAB outputs exceed the aggregate PNG source size limit`);
++        }
++        if (aggregatePngDecodedBytes > MAX_AGGREGATE_PNG_DECODED_BYTES) {
++            throw new Error(`Committed RTAB outputs exceed the aggregate PNG decoded-data limit`);
++        }
+         validatedBundles.push(bundle.bundleId);
+     }
+     return { manifest, validatedBundles };
+diff --git a/scripts/prepare-assets.mjs b/scripts/prepare-assets.mjs
+index cb738a2..c8289e9 100644
+--- a/scripts/prepare-assets.mjs
++++ b/scripts/prepare-assets.mjs
+@@ -1,10 +1,11 @@
+-import { randomUUID } from 'node:crypto';
+-import { mkdir, lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
++import { createHash } from 'node:crypto';
++import { lstat, readFile } from 'node:fs/promises';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import { createAssetPackageOutputs, validateCommittedAssetOutputs } from './package-assets.mjs';
+ import { createPublicSvgManifest, renderPublicSvgManifest } from './generate-public-svg-manifest.mjs';
+ import { PROJECT_ROOT } from './asset-registry.mjs';
++import { publishAssetOutputs, withAssetOutputLock } from './asset-output-publisher.mjs';
+
+ async function privateRootExists(directory) {
+     try {
+@@ -21,83 +22,71 @@ async function privateRootExists(directory) {
+     }
+ }
+
+-async function publishGeneratedFiles(outputs) {
+-    const staged = [];
++async function findStaleBundlePaths(projectRoot, nextManifest) {
++    const publicRoot = path.join(projectRoot, 'public');
++    const currentPaths = new Set(nextManifest.bundles.map((bundle) => bundle.bundleFile.toLowerCase()));
++    const stale = new Set();
++    const legacyNestedShips = path.join(publicRoot, 'assets', 'Ships', 'ships.bin');
++    const oldManifestPath = path.join(publicRoot, 'assets', 'asset-manifest.json');
++    let oldManifest;
+     try {
+-        for (const [destination, contents] of outputs) {
+-            await mkdir(path.dirname(destination), { recursive: true });
+-            const existing = await lstat(destination).catch((error) => {
+-                if (error.code === 'ENOENT') {
+-                    return null;
+-                }
+-                throw error;
+-            });
+-            if (existing && !existing.isFile()) {
+-                throw new Error(`Generated output destination is not a regular file: ${destination}`);
+-            }
+-
+-            const bytes = Buffer.isBuffer(contents) ? contents : Buffer.from(contents, 'utf8');
+-            if (existing && (await readFile(destination)).equals(bytes)) {
+-                continue;
+-            }
+-            const token = `${process.pid}-${randomUUID()}`;
+-            const temporary = `${destination}.${token}.tmp`;
+-            const backup = `${destination}.${token}.bak`;
+-            const entry = {
+-                destination,
+-                temporary,
+-                backup,
+-                hadOriginal: Boolean(existing),
+-                backupMoved: false,
+-                installed: false
+-            };
+-            staged.push(entry);
+-            await writeFile(temporary, bytes, { flag: 'wx' });
++        oldManifest = JSON.parse(await readFile(oldManifestPath, 'utf8'));
++    } catch (error) {
++        if (error.code !== 'ENOENT') {
++            throw new Error(`Could not inspect previous asset manifest for stale outputs: ${error.message}`);
+         }
++    }
+
+-        for (const entry of staged) {
+-            if (entry.hadOriginal) {
+-                await rename(entry.destination, entry.backup);
+-                entry.backupMoved = true;
+-            }
+-            await rename(entry.temporary, entry.destination);
+-            entry.installed = true;
++    if (oldManifest !== undefined) {
++        if (!oldManifest || !Array.isArray(oldManifest.bundles)) {
++            throw new Error('Previous asset manifest does not declare a bundle list; refusing stale-output cleanup');
+         }
+-    } catch (error) {
+-        const rollbackErrors = [];
+-        for (const entry of [...staged].reverse()) {
+-            try {
+-                if (entry.installed) {
+-                    await rm(entry.destination, { force: true });
++        for (const bundle of oldManifest.bundles) {
++            if (typeof bundle.bundleFile !== 'string'
++                || !bundle.bundleFile.startsWith('/assets/')
++                || bundle.bundleFile.includes('\\')
++                || !bundle.bundleFile.toLowerCase().endsWith('.bin')
++                || bundle.bundleFile.split('/').slice(1).some((part) => !part || part === '.' || part === '..')) {
++                throw new Error('Previous asset manifest contains an unsafe bundle path; refusing stale-output cleanup');
++            }
++            if (!currentPaths.has(bundle.bundleFile.toLowerCase())) {
++                const destination = path.resolve(publicRoot, `.${bundle.bundleFile}`);
++                if (!destination.startsWith(`${publicRoot}${path.sep}`)) {
++                    throw new Error(`Previous bundle path escapes public output root: ${bundle.bundleFile}`);
+                 }
+-                if (entry.backupMoved) {
+-                    await rename(entry.backup, entry.destination);
+-                    entry.backupMoved = false;
++                if (typeof bundle.bundleSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(bundle.bundleSha256)) {
++                    throw new Error(`Previous bundle "${bundle.bundleFile}" has no valid SHA-256; refusing stale-output cleanup`);
+                 }
+-            } catch (rollbackError) {
+-                rollbackErrors.push(rollbackError);
+-            }
+-        }
+-        for (const entry of staged) {
+-            try {
+-                await rm(entry.temporary, { force: true });
+-                if (!entry.backupMoved) {
+-                    await rm(entry.backup, { force: true });
++                const info = await lstat(destination).catch((error) => {
++                    if (error.code === 'ENOENT') {
++                        return null;
++                    }
++                    throw error;
++                });
++                if (info) {
++                    if (info.isSymbolicLink() || !info.isFile()) {
++                        throw new Error(`Previous bundle is not a regular file: ${destination}`);
++                    }
++                    const bytes = await readFile(destination);
++                    if (createHash('sha256').update(bytes).digest('hex') !== bundle.bundleSha256) {
++                        throw new Error(`Previous bundle hash does not match its manifest; refusing stale-output cleanup: ${destination}`);
++                    }
+                 }
+-            } catch (cleanupError) {
+-                rollbackErrors.push(cleanupError);
++                stale.add(destination);
+             }
+         }
+-        if (rollbackErrors.length > 0) {
+-            throw new AggregateError([error, ...rollbackErrors], 'Generated output publication failed and rollback was incomplete');
++    } else {
++        const legacyInfo = await lstat(legacyNestedShips).catch((error) => {
++            if (error.code === 'ENOENT') {
++                return null;
++            }
++            throw error;
++        });
++        if (legacyInfo) {
++            throw new Error(`Legacy Ships bundle has no prior manifest ownership record; preserving it: ${legacyNestedShips}`);
+         }
+-        throw error;
+-    }
+-
+-    for (const entry of staged) {
+-        await rm(entry.backup, { force: true });
+-        await rm(entry.temporary, { force: true });
+     }
++    return [...stale];
+ }
+
+ export async function prepareAssets({ projectRoot = PROJECT_ROOT } = {}) {
+@@ -110,15 +99,23 @@ export async function prepareAssets({ projectRoot = PROJECT_ROOT } = {}) {
+         return { mode: 'validate-only', ...result };
+     }
+
+-    const { outputFiles } = await createAssetPackageOutputs({ projectRoot });
+-    const runtimeAssets = await createPublicSvgManifest(undefined, undefined, projectRoot);
+-    outputFiles.set(
+-        path.join(projectRoot, 'src', 'generated', 'publicSvgManifest.ts'),
+-        renderPublicSvgManifest(runtimeAssets)
+-    );
+-    await publishGeneratedFiles(outputFiles);
+-    console.log(`Packaged ${outputFiles.size} generated asset output(s) from canonical sources.`);
+-    return { mode: 'package', outputFiles };
++    return withAssetOutputLock(projectRoot, async () => {
++        const { outputFiles, manifest } = await createAssetPackageOutputs({ projectRoot });
++        const runtimeAssets = await createPublicSvgManifest(undefined, undefined, projectRoot);
++        outputFiles.set(
++            path.join(projectRoot, 'src', 'generated', 'publicSvgManifest.ts'),
++            renderPublicSvgManifest(runtimeAssets)
++        );
++        const stalePaths = await findStaleBundlePaths(projectRoot, manifest);
++        const publication = await publishAssetOutputs({
++            projectRoot,
++            outputs: outputFiles,
++            stalePaths,
++            validateOutputs: async () => {}
++        });
++        console.log(`Packaged ${outputFiles.size} generated asset output(s) from canonical sources.`);
++        return { mode: 'package', outputFiles, publication };
++    });
+ }
+
+ const scriptPath = fileURLToPath(import.meta.url);
+diff --git a/tests/migrate-assets-private.test.ts b/tests/migrate-assets-private.test.ts
+index 494499b..4542f2e 100644
+--- a/tests/migrate-assets-private.test.ts
++++ b/tests/migrate-assets-private.test.ts
+@@ -11,6 +11,7 @@ const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '..');
+ interface RegistryAsset {
+     assetId: string;
+     logicalPath: string;
++    contentType: string;
+ }
+
+ interface Registry {
+@@ -84,7 +85,7 @@ async function createFixture(run: (projectRoot: string, registry: Registry, mapp
+     ));
+     await writeFile(path.join(scriptsRoot, 'asset-roots.mjs'), mappingBefore);
+
+-    for (const asset of registry.assets) {
++    for (const asset of registry.assets.filter((entry) => entry.contentType === 'SVG')) {
+         const bytes = fixtureSvg(asset.assetId);
+         const publicPath = path.join(publicRoot, nativePath(asset.logicalPath.slice('assets/'.length)));
+         await mkdir(path.dirname(publicPath), { recursive: true });
+@@ -106,7 +107,7 @@ async function createFixture(run: (projectRoot: string, registry: Registry, mapp
+
+ async function readAllPrivateHashes(projectRoot: string, registry: Registry) {
+     const result = new Map<string, string>();
+-    for (const asset of registry.assets) {
++    for (const asset of registry.assets.filter((entry) => entry.contentType === 'SVG')) {
+         const filePath = path.join(
+             projectRoot,
+             'private',
+@@ -123,7 +124,7 @@ test('dry-run reports the exact 21-file migration without changing sources or ma
+         const mappingAfter = await readFile(path.join(projectRoot, 'scripts', 'asset-roots.mjs'));
+         const privateSvgPaths = await listSvgFiles(path.join(projectRoot, 'private', 'assets'));
+         const expectedCopyBytes = registry.assets
+-            .filter((asset) => !asset.logicalPath.startsWith('assets/Ships/'))
++            .filter((asset) => asset.contentType === 'SVG' && !asset.logicalPath.startsWith('assets/Ships/'))
+             .reduce((total, asset) => total + fixtureSvg(asset.assetId).length, 0);
+
+         assert.equal(report.mode, 'dry-run');
+@@ -134,7 +135,7 @@ test('dry-run reports the exact 21-file migration without changing sources or ma
+         assert.equal(report.mappingChangeRequired, true);
+         assert.equal(report.assets.length, 31);
+         assert.deepEqual(privateSvgPaths, registry.assets
+-            .filter((asset) => asset.logicalPath.startsWith('assets/Ships/'))
++            .filter((asset) => asset.contentType === 'SVG' && asset.logicalPath.startsWith('assets/Ships/'))
+             .map((asset) => asset.logicalPath.slice('assets/'.length))
+             .sort());
+         assert.deepEqual(mappingAfter, mappingBefore);
+@@ -145,7 +146,7 @@ test('dry-run reports the exact 21-file migration without changing sources or ma
+ test('apply copies all registered sources, updates roots only after verification, and preserves public files', async () => {
+     await createFixture(async (projectRoot, registry, mappingBefore) => {
+         const publicHashes = new Map<string, string>();
+-        for (const asset of registry.assets) {
++        for (const asset of registry.assets.filter((entry) => entry.contentType === 'SVG')) {
+             const publicPath = path.join(
+                 projectRoot,
+                 'public',
+@@ -168,13 +169,13 @@ test('apply copies all registered sources, updates roots only after verification
+
+         const hashes = await readAllPrivateHashes(projectRoot, registry);
+         const expectedCopyBytes = registry.assets
+-            .filter((asset) => !asset.logicalPath.startsWith('assets/Ships/'))
++            .filter((asset) => asset.contentType === 'SVG' && !asset.logicalPath.startsWith('assets/Ships/'))
+             .reduce((total, asset) => total + fixtureSvg(asset.assetId).length, 0);
+         assert.equal(report.mode, 'migrated');
+         assert.equal(report.filesToCopy, 21);
+         assert.equal(report.copyBytes, expectedCopyBytes);
+         assert.equal(hashes.size, 31);
+-        for (const asset of registry.assets) {
++        for (const asset of registry.assets.filter((entry) => entry.contentType === 'SVG')) {
+             assert.equal(hashes.get(asset.logicalPath), publicHashes.get(asset.logicalPath));
+             const publicPath = path.join(projectRoot, 'public', nativePath(asset.logicalPath));
+             assert.equal(hash(await readFile(publicPath)), publicHashes.get(asset.logicalPath));
+diff --git a/tests/package-assets.test.ts b/tests/package-assets.test.ts
+index b99f9ec..280a69a 100644
+--- a/tests/package-assets.test.ts
++++ b/tests/package-assets.test.ts
+@@ -1,6 +1,7 @@
+ import assert from 'node:assert/strict';
+-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+ import { createHash } from 'node:crypto';
++import { deflateSync } from 'node:zlib';
++import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+ import os from 'node:os';
+ import path from 'node:path';
+ import { test } from 'node:test';
+@@ -16,14 +17,99 @@ import {
+     validateCommittedAssetOutputs,
+     validateRtabBundle
+ } from '../scripts/package-assets.mjs';
++import { PNG_LIMITS, validatePng } from '../scripts/validate-png.mjs';
+ import { prepareAssets } from '../scripts/prepare-assets.mjs';
+
+ const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '..');
+ const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>';
++const PLANET_ASSETS = [
++    ['rt.planet-map.map-111', 'assets/Planets/Map-111.png', 'planetMap111'],
++    ['rt.planet-map.map-122', 'assets/Planets/Map-122.png', 'planetMap122'],
++    ['rt.planet-map.map-692', 'assets/Planets/Map-692.png', 'planetMap692']
++];
++
++type RegistryAsset = {
++    assetId: string;
++    logicalPath: string;
++    textureKey: string;
++    aliases: string[];
++    contentType: 'SVG' | 'PNG';
++};
++
++type Registry = {
++    registrySchemaVersion: string;
++    assets: RegistryAsset[];
++};
++
++function crc32(bytes: Buffer) {
++    let crc = 0xffffffff;
++    for (const byte of bytes) {
++        crc ^= byte;
++        for (let bit = 0; bit < 8; bit += 1) {
++            crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
++        }
++    }
++    return (crc ^ 0xffffffff) >>> 0;
++}
++
++function pngChunk(type: string, data: Buffer) {
++    const typeBytes = Buffer.from(type, 'ascii');
++    const chunk = Buffer.alloc(12 + data.length);
++    chunk.writeUInt32BE(data.length, 0);
++    typeBytes.copy(chunk, 4);
++    data.copy(chunk, 8);
++    chunk.writeUInt32BE(crc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
++    return chunk;
++}
++
++function createPng({
++    width = 1,
++    height = 1,
++    bitDepth = 8,
++    colorType = 6,
++    interlace = 0,
++    filter = 0
++}: {
++    width?: number;
++    height?: number;
++    bitDepth?: number;
++    colorType?: number;
++    interlace?: number;
++    filter?: number;
++} = {}) {
++    const header = Buffer.alloc(13);
++    header.writeUInt32BE(width, 0);
++    header.writeUInt32BE(height, 4);
++    header[8] = bitDepth;
++    header[9] = colorType;
++    header[10] = 0;
++    header[11] = 0;
++    header[12] = interlace;
++    const row = Buffer.alloc(width * 4 + 1);
++    row[0] = filter;
++    return Buffer.concat([
++        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
++        pngChunk('IHDR', header),
++        pngChunk('IDAT', deflateSync(row)),
++        pngChunk('IEND', Buffer.alloc(0))
++    ]);
++}
++
++function hash(bytes: Buffer) {
++    return createHash('sha256').update(bytes).digest('hex');
++}
+
+-async function createProjectFixture(run: (projectRoot: string, registry: any) => Promise<void>) {
++function changeFirstRecordContentType(bytes: Buffer, code: number) {
++    const indexSize = Number(bytes.readBigUInt64LE(24));
++    const index = bytes.subarray(64, 64 + indexSize);
++    index.writeUInt16LE(code, 28 + 32);
++    const digestOffset = index.length - 32;
++    createHash('sha256').update(index.subarray(0, digestOffset)).digest().copy(index, digestOffset);
++}
++
++async function createProjectFixture(run: (projectRoot: string, registry: Registry) => Promise<void>) {
+     const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'rtab-assets-'));
+-    const registry = JSON.parse(await readFile(path.join(REPOSITORY_ROOT, 'scripts', 'asset-registry.json'), 'utf8'));
++    const registry = JSON.parse(await readFile(path.join(REPOSITORY_ROOT, 'scripts', 'asset-registry.json'), 'utf8')) as Registry;
+     const registryPath = path.join(projectRoot, 'scripts', 'asset-registry.json');
+     await mkdir(path.dirname(registryPath), { recursive: true });
+     await writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+@@ -32,14 +118,10 @@ async function createProjectFixture(run: (projectRoot: string, registry: any) =>
+     for (const asset of registry.assets) {
+         const sourcePath = resolveAssetSource(asset.logicalPath, projectRoot);
+         await mkdir(path.dirname(sourcePath), { recursive: true });
+-        await writeFile(sourcePath, SVG);
++        await writeFile(sourcePath, asset.contentType === 'SVG' ? SVG : createPng());
+
+         if (asset.logicalPath.startsWith('assets/Ships/')) {
+-            const stalePublicCopy = path.join(
+-                projectRoot,
+-                'public',
+-                ...asset.logicalPath.split('/')
+-            );
++            const stalePublicCopy = path.join(projectRoot, 'public', ...asset.logicalPath.split('/'));
+             await mkdir(path.dirname(stalePublicCopy), { recursive: true });
+             await writeFile(stalePublicCopy, '<svg xmlns="http://www.w3.org/2000/svg"><text>stale</text></svg>');
+         }
+@@ -54,7 +136,10 @@ async function createProjectFixture(run: (projectRoot: string, registry: any) =>
+
+ async function snapshotOutputs(projectRoot: string) {
+     const paths = [
+-        path.join(projectRoot, 'public', 'assets', 'Ships', 'ships.bin'),
++        path.join(projectRoot, 'public', 'assets', 'ships.bin'),
++        path.join(projectRoot, 'public', 'assets', 'components.bin'),
++        path.join(projectRoot, 'public', 'assets', 'turrets-platforms.bin'),
++        path.join(projectRoot, 'public', 'assets', 'planets.bin'),
+         path.join(projectRoot, 'public', 'assets', 'asset-manifest.json'),
+         path.join(projectRoot, 'public', 'assets', 'asset-manifest-schema.json'),
+         path.join(projectRoot, 'src', 'generated', 'publicSvgManifest.ts')
+@@ -66,39 +151,51 @@ async function snapshotOutputs(projectRoot: string) {
+     return snapshots;
+ }
+
+-function assertSnapshotUnchanged(snapshots: Map<string, Buffer>, projectRoot: string) {
+-    return Promise.all([...snapshots].map(async ([filePath, expected]) => {
+-        assert.deepEqual(await readFile(filePath), expected, `Unexpected output change: ${path.relative(projectRoot, filePath)}`);
++async function assertSnapshotUnchanged(snapshots: Map<string, Buffer>) {
++    await Promise.all([...snapshots].map(async ([filePath, expected]) => {
++        assert.deepEqual(await readFile(filePath), expected, `Unexpected output change: ${filePath}`);
+     }));
+ }
+
+-function hash(bytes: Buffer) {
+-    return createHash('sha256').update(bytes).digest('hex');
++function manifestExpectedAssets(manifest: any, bundleId: string) {
++    return manifest.assets
++        .filter((asset: any) => asset.bundleId === bundleId)
++        .map((asset: any) => ({
++            assetId: asset.assetId,
++            contentType: asset.contentType,
++            logicalPath: asset.logicalPath
++        }))
++        .sort((left: any, right: any) => left.assetId < right.assetId ? -1 : left.assetId > right.assetId ? 1 : 0);
+ }
+
+-test('registry covers only 31 game SVGs, preserves runtime keys and the exact legacy aliases', async () => {
+-    const registry = await readAssetRegistry(REPOSITORY_ROOT, { expectedAssetCount: 31 });
+-    const registeredPaths = new Set(registry.assets.map((asset) => asset.logicalPath));
++test('registry preserves 31 SVG identities and registers only the three approved planet PNGs', async () => {
++    const registry = await readAssetRegistry(REPOSITORY_ROOT);
++    const svgAssets = registry.assets.filter((asset) => asset.contentType === 'SVG');
++    const pngAssets = registry.assets.filter((asset) => asset.contentType === 'PNG');
+     const runtimeByUrl = new Map(publicSvgTextures.map((asset) => [decodeURIComponent(asset.url.slice('/assets/'.length)), asset]));
+
+-    assert.equal(registry.assets.length, 31);
+-    assert.equal(registry.assets.filter((asset) => asset.bundleId === 'ships1').length, 10);
+-    assert.equal(registry.assets.filter((asset) => !asset.bundleId).length, 21);
+-    assert.equal(registry.assets.every((asset) => asset.logicalPath.startsWith('assets/')), true);
+-    assert.equal(registry.assets.some((asset) => asset.logicalPath.startsWith('minimap/')), false);
+-    assert.equal(registeredPaths.has('favicon.svg'), false);
+-    assert.equal(registeredPaths.has('icons.svg'), false);
+-    assert.equal(Object.keys(registry.bundles).join(','), 'ships1');
++    assert.equal(registry.registrySchemaVersion, '1.1');
++    assert.equal(registry.assets.length, 34);
++    assert.equal(svgAssets.length, 31);
++    assert.equal(pngAssets.length, 3);
++    assert.equal('bundles' in registry, false);
++    assert.equal(registry.assets.some((asset) => 'bundleId' in asset), false);
++    assert.deepEqual(
++        pngAssets.map((asset) => [asset.assetId, asset.logicalPath, asset.textureKey, asset.contentType]),
++        PLANET_ASSETS.map(([assetId, logicalPath, textureKey]) => [assetId, logicalPath, textureKey, 'PNG'])
++    );
++    assert.equal(registry.assets.some((asset) => asset.logicalPath.endsWith('Map-111-2.png')), false);
++    assert.equal(registry.assets.some((asset) => asset.logicalPath.endsWith('Map-122-2.png')), false);
++    assert.equal(publicSvgTextures.length, 31);
+
+-    for (const asset of registry.assets) {
++    for (const asset of svgAssets) {
+         const runtimeAsset = runtimeByUrl.get(asset.logicalPath.slice('assets/'.length));
+         assert.ok(runtimeAsset, `Missing runtime manifest path ${asset.logicalPath}`);
+         assert.equal(runtimeAsset.key, asset.textureKey);
+         assert.deepEqual(runtimeAsset.aliases, asset.aliases);
+     }
+-
+     assert.deepEqual(
+-        registry.assets.filter((asset) => asset.aliases.length > 0).map((asset) => [asset.logicalPath, asset.aliases]),
++        svgAssets.filter((asset) => asset.aliases.length > 0).map((asset) => [asset.logicalPath, asset.aliases]),
+         [
+             ['assets/Components/Aistiaria/01_side_hull_angular.svg', ['central-hull']],
+             ['assets/Ships/alien-interceptor.svg', ['alien-interceptor']],
+@@ -107,7 +204,7 @@ test('registry covers only 31 game SVGs, preserves runtime keys and the exact le
+     );
+ });
+
+-test('registry rejects duplicate IDs, duplicate texture keys, alias conflicts, and unsupported content types', async () => {
++test('registry rejects duplicate IDs, duplicate texture keys, alias conflicts, unsupported types, and old schema fields', async () => {
+     const registry = JSON.parse(await readFile(path.join(REPOSITORY_ROOT, 'scripts', 'asset-registry.json'), 'utf8'));
+     const duplicateId = structuredClone(registry);
+     duplicateId.assets[1].assetId = duplicateId.assets[0].assetId;
+@@ -122,157 +219,248 @@ test('registry rejects duplicate IDs, duplicate texture keys, alias conflicts, a
+     assert.throws(() => validateAssetRegistry(duplicateAlias), /conflicting alias/);
+
+     const unsupportedType = structuredClone(registry);
+-    unsupportedType.assets[0].contentType = 'PNG';
++    unsupportedType.assets[0].contentType = 'JSON';
+     assert.throws(() => validateAssetRegistry(unsupportedType), /unsupported content type/);
++
++    const oldSchema = structuredClone(registry);
++    oldSchema.registrySchemaVersion = '1.0';
++    assert.throws(() => validateAssetRegistry(oldSchema), /registrySchemaVersion must be "1.1"/);
++
++    const oldBundleFields = structuredClone(registry);
++    oldBundleFields.assets[0].bundleId = 'ships1';
++    assert.throws(() => validateAssetRegistry(oldBundleFields), /only asset identity and runtime metadata/);
+ });
+
+-test('packager emits a deterministic ten-ship RTAB bundle and generated-only manifest/schema', async () => {
+-    await createProjectFixture(async (projectRoot, registry) => {
++test('folder-derived packaging emits the four RTAB 1.0 bundles and a manifest schema 1.1', async () => {
++    await createProjectFixture(async (projectRoot) => {
+         const first = await createAssetPackageOutputs({ projectRoot });
+         const second = await createAssetPackageOutputs({ projectRoot });
+-        const bundlePath = path.join(projectRoot, 'public', 'assets', 'Ships', 'ships.bin');
+         const manifestPath = path.join(projectRoot, 'public', 'assets', 'asset-manifest.json');
+         const schemaPath = path.join(projectRoot, 'public', 'assets', 'asset-manifest-schema.json');
+-        const bundleBytes = first.outputFiles.get(bundlePath) as Buffer;
+-        const secondBundle = second.outputFiles.get(bundlePath) as Buffer;
+         const manifest = JSON.parse(first.outputFiles.get(manifestPath) as string);
+         const schema = JSON.parse(first.outputFiles.get(schemaPath) as string);
+-        const expectedAssets = registry.assets
+-            .filter((asset: any) => asset.bundleId === 'ships1')
+-            .map((asset: any) => ({ assetId: asset.assetId }))
+-            .sort((left: any, right: any) => left.assetId < right.assetId ? -1 : 1);
+-        const decoded = validateRtabBundle(bundleBytes, manifest.bundles[0], expectedAssets);
+-
+-        assert.deepEqual(bundleBytes, secondBundle);
+-        assert.equal(hash(bundleBytes), manifest.bundles[0].bundleSha256);
+-        assert.equal(bundleBytes.toString('ascii', 0, 4), 'RTAB');
+-        assert.equal(bundleBytes.readUInt16LE(4), 0x0100);
+-        assert.equal(bundleBytes.readUInt16LE(6), 0x0003);
+-        assert.equal(bundleBytes.readBigUInt64LE(16), 64n);
+-        assert.equal(bundleBytes.subarray(32, 64).every((byte) => byte === 0), true);
+-        assert.equal(decoded.length, 10);
+-        assert.equal(decoded.every((asset) => asset.bytes.toString('utf8').startsWith('<svg')), true);
+-        assert.equal(manifest.assets.length, 10);
+-        assert.equal(manifest.assets.every((asset: any) => asset.bundleId === 'ships1'), true);
+-        assert.equal(manifest.assets.some((asset: any) => asset.logicalPath.includes('Components')), false);
+-        assert.equal(manifest.bundles[0].bundleFile, '/assets/Ships/ships.bin');
+-        assert.equal('assetIds' in manifest.bundles[0], false);
+-        assert.equal('textureKeys' in manifest.bundles[0], false);
+-        assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
+-        assert.equal(schema.properties.manifestSchemaVersion.const, '1.0');
+-        assert.deepEqual(manifest, JSON.parse(second.outputFiles.get(manifestPath) as string));
++        const bundleCounts = new Map(manifest.bundles.map((bundle: any) => [bundle.bundleId, bundle.assetCount]));
++
++        assert.deepEqual([...bundleCounts.entries()].sort(), [
++            ['components', 19],
++            ['planets', 3],
++            ['ships', 10],
++            ['turrets-platforms', 2]
++        ]);
++        assert.equal(manifest.manifestSchemaVersion, '1.1');
++        assert.equal(manifest.assets.length, 34);
++        assert.equal(manifest.bundles.length, 4);
++        assert.equal(schema.properties.manifestSchemaVersion.const, '1.1');
++        assert.deepEqual(manifest.bundles.map((bundle: any) => bundle.bundleFile).sort(), [
++            '/assets/components.bin',
++            '/assets/planets.bin',
++            '/assets/ships.bin',
++            '/assets/turrets-platforms.bin'
++        ]);
++
++        for (const bundle of manifest.bundles) {
++            const outputPath = path.join(projectRoot, 'public', bundle.bundleFile.slice(1));
++            const bytes = first.outputFiles.get(outputPath) as Buffer;
++            const decoded = validateRtabBundle(bytes, bundle, manifestExpectedAssets(manifest, bundle.bundleId));
++            assert.equal(bytes.readUInt16LE(4), 0x0100);
++            assert.equal(hash(bytes), bundle.bundleSha256);
++            assert.equal(decoded.length, bundle.assetCount);
++            assert.equal(
++                decoded.every((asset: any) => asset.contentType === (bundle.bundleId === 'planets' ? 'PNG' : 'SVG')),
++                true
++            );
++            assert.deepEqual(bytes, second.outputFiles.get(outputPath));
++        }
++        assert.equal(manifest.assets.some((asset: any) => asset.logicalPath.endsWith('Map-111-2.png')), false);
++        assert.equal(manifest.assets.some((asset: any) => asset.logicalPath.endsWith('Map-122-2.png')), false);
+     });
+ });
+
+-test('packager rejects malformed, non-SVG, and empty canonical ship sources', async () => {
+-    await createProjectFixture(async (projectRoot, registry) => {
+-        const ship = registry.assets.find((asset: any) => asset.assetId === 'rt.ship.human-frigate');
+-        const sourcePath = resolveAssetSource(ship.logicalPath, projectRoot);
++test('real planet PNGs match the approved bounded RGBA8 non-interlaced profile', async () => {
++    let aggregateCompressedBytes = 0;
++    let aggregateDecodedBytes = 0;
++    for (const [, logicalPath] of PLANET_ASSETS) {
++        const bytes = await readFile(path.join(REPOSITORY_ROOT, 'public', logicalPath));
++        const result = validatePng(bytes, { logicalPath });
++        assert.equal(result.width, 2000);
++        assert.equal(result.height, 1000);
++        assert.equal(result.decodedPixelBytes, 8_000_000);
++        assert.equal(result.scanlineBytes, 8_001_000);
++        aggregateCompressedBytes += result.compressedBytes;
++        aggregateDecodedBytes += result.scanlineBytes;
++    }
++    assert.ok(aggregateCompressedBytes <= PNG_LIMITS.maxAggregateFileBytes);
++    assert.ok(aggregateDecodedBytes <= PNG_LIMITS.maxAggregateDecodedBytes);
++});
+
++test('PNG validator rejects unsupported IHDR profiles, invalid scanline filters, and corruption', () => {
++    const asset = { logicalPath: 'assets/Planets/test.png' };
++    assert.throws(() => validatePng(createPng({ bitDepth: 16 }), asset), /unsupported PNG profile/);
++    assert.throws(() => validatePng(createPng({ colorType: 2 }), asset), /unsupported PNG profile/);
++    assert.throws(() => validatePng(createPng({ interlace: 1 }), asset), /unsupported PNG compression, filter, or interlace/);
++    assert.throws(() => validatePng(createPng({ filter: 5 }), asset), /unsupported scanline filter/);
++    const corrupted = createPng();
++    corrupted[corrupted.length - 1] ^= 0xff;
++    assert.throws(() => validatePng(corrupted, asset), /invalid CRC/);
++});
++
++test('RTAB record content type must match manifest metadata in both directions', async () => {
++    await createProjectFixture(async (projectRoot) => {
++        const { outputFiles } = await createAssetPackageOutputs({ projectRoot });
++        const manifest = JSON.parse(outputFiles.get(path.join(projectRoot, 'public', 'assets', 'asset-manifest.json')) as string);
++        const bundle = manifest.bundles.find((entry: any) => entry.bundleId === 'planets');
++        const bundlePath = path.join(projectRoot, 'public', bundle.bundleFile.slice(1));
++        const original = Buffer.from(outputFiles.get(bundlePath) as Buffer);
++        const expected = manifestExpectedAssets(manifest, 'planets');
++        const recordSaysSvg = Buffer.from(original);
++        changeFirstRecordContentType(recordSaysSvg, 0);
++        assert.throws(
++            () => validateRtabBundle(recordSaysSvg, bundle, expected),
++            /does not match manifest content type "PNG"/
++        );
++
++        const manifestSaysSvg = expected.map((asset: any, index: number) => (
++            index === 0 ? { ...asset, contentType: 'SVG' } : asset
++        ));
++        assert.throws(
++            () => validateRtabBundle(original, bundle, manifestSaysSvg),
++            /RTAB content type .* does not match manifest content type "SVG"/
++        );
++    });
++});
++
++test('clean-clone manifest content type must match the registry asset metadata', async () => {
++    await createProjectFixture(async (projectRoot) => {
++        await prepareAssets({ projectRoot });
++        const manifestPath = path.join(projectRoot, 'public', 'assets', 'asset-manifest.json');
++        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
++        const planet = manifest.assets.find((asset: any) => asset.contentType === 'PNG');
++        planet.contentType = 'SVG';
++        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
++        await rm(path.join(projectRoot, 'private'), { recursive: true });
++        await assert.rejects(
++            validateCommittedAssetOutputs({ projectRoot }),
++            /metadata does not match registry asset/
++        );
++    });
++});
++
++test('packager rejects malformed SVG, missing sources, unregistered assets, root files, and normalized category collisions', async () => {
++    await createProjectFixture(async (projectRoot, registry) => {
++        const svg = registry.assets.find((asset) => asset.assetId === 'rt.ship.human-frigate')!;
++        const sourcePath = resolveAssetSource(svg.logicalPath, projectRoot);
+         await writeFile(sourcePath, '<svg><g></svg>');
+         await assert.rejects(createAssetPackageOutputs({ projectRoot }), /not a well-formed SVG document/);
+
+-        await writeFile(sourcePath, '<html/>');
+-        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /does not have an SVG document root/);
++        await writeFile(sourcePath, SVG);
++        await rm(sourcePath);
++        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /could not find canonical source/);
++        await writeFile(sourcePath, SVG);
++
++        await writeFile(path.join(projectRoot, 'private', 'assets', 'Ships', 'unknown.svg'), SVG);
++        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /Unregistered asset source file/);
++        await rm(path.join(projectRoot, 'private', 'assets', 'Ships', 'unknown.svg'));
+
+-        await writeFile(sourcePath, '<svg xmlns="urn:not-svg"/>');
+-        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /unexpected root namespace/);
++        await writeFile(path.join(projectRoot, 'private', 'assets', 'direct.svg'), SVG);
++        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /inside a top-level category/);
++        await rm(path.join(projectRoot, 'private', 'assets', 'direct.svg'));
+
+-        await writeFile(sourcePath, Buffer.alloc(0));
+-        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /zero-byte file/);
++        await mkdir(path.join(projectRoot, 'private', 'assets', 'Turrets Platforms'));
++        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /collide after normalization/);
+     });
+ });
+
+-test('bundle validator rejects unsupported versions, flags, and payload corruption', async () => {
++test('empty category directories do not create bundles', async () => {
+     await createProjectFixture(async (projectRoot) => {
+-        const { outputFiles } = await createAssetPackageOutputs({ projectRoot });
+-        const bundlePath = path.join(projectRoot, 'public', 'assets', 'Ships', 'ships.bin');
+-        const bytes = outputFiles.get(bundlePath) as Buffer;
+-        const bundle = { bundleId: 'ships1' };
+-        const expectedAssets = JSON.parse(outputFiles.get(path.join(projectRoot, 'public', 'assets', 'asset-manifest.json')) as string)
+-            .assets.map((asset: any) => ({ assetId: asset.assetId }))
+-            .sort((left: any, right: any) => left.assetId < right.assetId ? -1 : 1);
+-
+-        const badVersion = Buffer.from(bytes);
+-        badVersion.writeUInt16LE(0x0101, 4);
+-        assert.throws(() => validateRtabBundle(badVersion, bundle, expectedAssets), /Unsupported RTAB version/);
+-
+-        const badFlags = Buffer.from(bytes);
+-        badFlags.writeUInt16LE(0x0007, 6);
+-        assert.throws(() => validateRtabBundle(badFlags, bundle, expectedAssets), /header flags/);
+-
+-        const badPayload = Buffer.from(bytes);
+-        badPayload[badPayload.length - 1] ^= 0xff;
+-        assert.throws(() => validateRtabBundle(badPayload, bundle, expectedAssets), /Payload for/);
++        await mkdir(path.join(projectRoot, 'private', 'assets', 'Stations'));
++        const { manifest } = await createAssetPackageOutputs({ projectRoot });
++        assert.deepEqual(manifest.bundles.map((bundle: any) => bundle.bundleId).sort(), [
++            'components',
++            'planets',
++            'ships',
++            'turrets-platforms'
++        ]);
+     });
+ });
+
+-test('missing private ship sources fail even when stale public ship copies exist', async () => {
+-    await createProjectFixture(async (projectRoot, registry) => {
+-        const ship = registry.assets.find((asset: any) => asset.assetId === 'rt.ship.human-frigate');
+-        await rm(resolveAssetSource(ship.logicalPath, projectRoot));
+-        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /could not find canonical source/);
++test('category traversal rejects symbolic links and special filesystem entries', async (t) => {
++    await createProjectFixture(async (projectRoot) => {
++        const target = path.join(projectRoot, 'private', 'assets', 'Ships', 'human-frigate.svg');
++        const linkPath = path.join(projectRoot, 'private', 'assets', 'Ships', 'linked.svg');
++        try {
++            await symlink(target, linkPath);
++        } catch (error: any) {
++            if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
++                t.skip(`symbolic link creation is unavailable: ${error.code}`);
++                return;
++            }
++            throw error;
++        }
++        await assert.rejects(createAssetPackageOutputs({ projectRoot }), /link or special file/);
+     });
+ });
+
+-test('lifecycle packages from private ships, retains 31 loose entries, and validates clean-clone mode read-only', async () => {
++test('lifecycle packages from private sources, keeps the SVG runtime manifest at 31 entries, and clean-clone validation is read-only', async () => {
+     await createProjectFixture(async (projectRoot) => {
++        const legacyNestedBundle = path.join(projectRoot, 'public', 'assets', 'Ships', 'ships.bin');
++        await mkdir(path.dirname(legacyNestedBundle), { recursive: true });
++        const legacyBundleBytes = Buffer.from('previous nested bundle');
++        await writeFile(legacyNestedBundle, legacyBundleBytes);
++        await writeFile(
++            path.join(projectRoot, 'public', 'assets', 'asset-manifest.json'),
++            JSON.stringify({
++                manifestSchemaVersion: '1.0',
++                assets: [],
++                bundles: [{
++                    bundleId: 'ships1',
++                    bundleFile: '/assets/Ships/ships.bin',
++                    bundleSha256: hash(legacyBundleBytes)
++                }]
++            })
++        );
++
+         const generated = await prepareAssets({ projectRoot });
+         assert.equal(generated.mode, 'package');
++        await assert.rejects(readFile(legacyNestedBundle), { code: 'ENOENT' });
+         const runtimeManifestPath = path.join(projectRoot, 'src', 'generated', 'publicSvgManifest.ts');
+         const runtimeManifest = await readFile(runtimeManifestPath, 'utf8');
++        const baselineRuntimeManifest = await readFile(path.join(REPOSITORY_ROOT, 'src', 'generated', 'publicSvgManifest.ts'), 'utf8');
+         assert.equal((runtimeManifest.match(/"key":/g) ?? []).length, 31);
+         assert.match(runtimeManifest, /"central-hull"/);
+-        assert.match(runtimeManifest, /"human-dreadnought"/);
+-        assert.match(runtimeManifest, /"alien-interceptor"/);
++        assert.doesNotMatch(runtimeManifest, /Map-111\.png|planetMap111/);
++        assert.equal(runtimeManifest, baselineRuntimeManifest);
+
+         const outputs = await snapshotOutputs(projectRoot);
+         await rm(path.join(projectRoot, 'private'), { recursive: true });
+         const cleanClone = await prepareAssets({ projectRoot });
+         assert.equal(cleanClone.mode, 'validate-only');
+-        assert.deepEqual(cleanClone.validatedBundles, ['ships1']);
+-        await assertSnapshotUnchanged(outputs, projectRoot);
++        assert.deepEqual(cleanClone.validatedBundles, ['components', 'planets', 'ships', 'turrets-platforms']);
++        await assertSnapshotUnchanged(outputs);
+     });
+ });
+
+-test('incomplete private source fails before replacing previously valid outputs', async () => {
++test('incomplete private sources fail without public fallback or replacing prior outputs', async () => {
+     await createProjectFixture(async (projectRoot, registry) => {
+         await prepareAssets({ projectRoot });
+         const outputs = await snapshotOutputs(projectRoot);
+-        const ship = registry.assets.find((asset: any) => asset.assetId === 'rt.ship.human-dreadnought');
++        const ship = registry.assets.find((asset) => asset.assetId === 'rt.ship.human-dreadnought')!;
+         await rm(resolveAssetSource(ship.logicalPath, projectRoot));
+-
+         await assert.rejects(prepareAssets({ projectRoot }), /could not find canonical source/);
+-        await assertSnapshotUnchanged(outputs, projectRoot);
++        await assertSnapshotUnchanged(outputs);
+     });
+ });
+
+-test('a missing public canonical source also fails before generated output replacement', async () => {
+-    await createProjectFixture(async (projectRoot, registry) => {
+-        await prepareAssets({ projectRoot });
+-        const outputs = await snapshotOutputs(projectRoot);
+-        const component = registry.assets.find((asset: any) => asset.logicalPath.includes('Components/Aistiaria/02_hex_cockpit'));
+-        await rm(resolveAssetSource(component.logicalPath, projectRoot));
+-
+-        await assert.rejects(prepareAssets({ projectRoot }), /could not find canonical source|Missing canonical source/);
+-        await assertSnapshotUnchanged(outputs, projectRoot);
+-    });
+-});
+-
+-test('clean-clone validation detects a committed bundle hash mismatch', async () => {
++test('clean-clone validation detects bundle hash mismatches and rejects extra manifest fields', async () => {
+     await createProjectFixture(async (projectRoot) => {
+         await prepareAssets({ projectRoot });
+-        const bundlePath = path.join(projectRoot, 'public', 'assets', 'Ships', 'ships.bin');
++        const bundlePath = path.join(projectRoot, 'public', 'assets', 'ships.bin');
+         const bytes = await readFile(bundlePath);
+         bytes[bytes.length - 1] ^= 0xff;
+         await writeFile(bundlePath, bytes);
+         await rm(path.join(projectRoot, 'private'), { recursive: true });
+-
+-        await assert.rejects(validateCommittedAssetOutputs({ projectRoot }), /Bundle "ships1" SHA-256 mismatch/);
++        await assert.rejects(validateCommittedAssetOutputs({ projectRoot }), /Bundle "ships" SHA-256 mismatch/);
+     });
+-});
+
+-test('clean-clone validation rejects manifest fields outside the public contract', async () => {
+     await createProjectFixture(async (projectRoot) => {
+         await prepareAssets({ projectRoot });
+         const manifestPath = path.join(projectRoot, 'public', 'assets', 'asset-manifest.json');
+@@ -280,25 +468,25 @@ test('clean-clone validation rejects manifest fields outside the public contract
+         manifest.assets[0].privateSourcePath = 'private/assets/Ships/secret.svg';
+         await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+         await rm(path.join(projectRoot, 'private'), { recursive: true });
+-
+         await assert.rejects(validateCommittedAssetOutputs({ projectRoot }), /unsupported properties/);
+     });
+ });
+
+-test('a private path that exists but is not a directory is not treated as an absent clean clone', async () => {
++test('an existing but invalid private root is not treated as an absent clean clone', async () => {
+     await createProjectFixture(async (projectRoot) => {
+         await prepareAssets({ projectRoot });
+         await rm(path.join(projectRoot, 'private'), { recursive: true });
+         await writeFile(path.join(projectRoot, 'private'), 'not a directory');
+-
+         await assert.rejects(prepareAssets({ projectRoot }), /exists but is not a directory/);
+     });
+ });
+
+-test('generated schema declares the manifest contract without asset membership arrays', () => {
++test('generated manifest schema 1.1 contains both content types without bundle membership arrays', () => {
+     const schema = getManifestSchema();
+     assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
++    assert.equal(schema.properties.manifestSchemaVersion.const, '1.1');
+     assert.deepEqual(schema.required, ['manifestSchemaVersion', 'assets', 'bundles']);
++    assert.deepEqual(schema.properties.assets.items.properties.contentType.enum, ['SVG', 'PNG']);
+     assert.equal('assetIds' in schema.properties.bundles.items.properties, false);
+     assert.equal('textureKeys' in schema.properties.bundles.items.properties, false);
+ });
+(END)
