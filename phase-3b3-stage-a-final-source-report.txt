@@ -1,9 +1,10 @@
 PHASE 3B.3 STAGE A ? FINAL COMPLETE SOURCE REPORT
-Generated from the actual current working tree; source sections below are copied as raw file bytes.
-Generated at: 2026-11-09T16:15:05.065079+07:00
+Report-only regeneration from current worktree bytes. Complete source files are included; not reconstructed from diffs.
+Generated: 2026-11-09T16:45:59.130549+07:00
 Repository root: C:/GitHub/Redemptis-Tiariea
 Branch: feature/phase-3b3-stage-a
 HEAD: 19a8d01c84f558fc14a219e3240ea8050dae061c
+Index-tree hash: b96476a5a5e0356a98653ce40b4f27052849f663
 git status --short --untracked-files=all:
  M docs/BINARY-ENCRYPT-MIGRATION.md
  D public/assets/Ships/ships.bin
@@ -32,38 +33,351 @@ git diff --stat:
  public/assets/Ships/ships.bin            | Bin 111817 -> 0 bytes
  public/assets/asset-manifest-schema.json |   9 +-
  public/assets/asset-manifest.json        | 265 +++++++++++++-
- scripts/asset-registry.json              |  60 ++--
+ scripts/asset-registry.json              |  60 +--
  scripts/asset-registry.mjs               |  74 ++--
  scripts/generate-public-svg-manifest.mjs |  10 +-
  scripts/migrate-assets-private.mjs       |  13 +-
- scripts/package-assets.mjs               | 301 +++++++++++++---
- scripts/prepare-assets.mjs               | 201 ++++++-----
+ scripts/package-assets.mjs               | 301 ++++++++++++---
+ scripts/prepare-assets.mjs               | 203 ++++++-----
  tests/migrate-assets-private.test.ts     |  15 +-
- tests/package-assets.test.ts             | 572 ++++++++++++++++++++++++-------
- 12 files changed, 1167 insertions(+), 369 deletions(-)
+ tests/package-assets.test.ts             | 606 ++++++++++++++++++++++++-------
+ 12 files changed, 1203 insertions(+), 369 deletions(-)
 git diff --cached --stat:
-(no staged diff)
-Index tree before report generation: b96476a5a5e0356a98653ce40b4f27052849f663
-The report is stored outside the implementation repository in session files; no repository source or Git state was changed to produce it.
+(none)
 
-IMPLEMENTATION CONFORMANCE REVIEW
-Lock handling: PASS ? acquireLock uses exclusive creation; a pre-existing lock aborts without checking PID, hostname, or age for deletion; processStartIdentity is written. Caveat: on Windows, getProcessStartIdentity falls back to estimated-unix-ms computed from process.uptime(), not an OS-native process creation identity. The documented operator procedure requires independent OS process verification.
-Transaction journal: PASS for transaction output operations ? append-only JSONL records include transactionId, sequence, and SHA-256 checksum; readJournal enforces contiguous sequence, matching transaction identity, checksums, operation uniqueness, allowed operation types and state transitions; runJournaledOperation flushes intent before mutation and completion after verifying resulting file hashes; pending intents are reconciled against actual filesystem state. Malformed/truncated/ambiguous journals are rejected before recovery edits. Scope caveat: lock creation/removal and final journal unlink are control-file mutations not represented by transaction operation intent/completion pairs; the journal writes a durable complete/rolled-back state before unlink. If ?every filesystem mutation? includes its own/control-file lifecycle, the literal requirement is not fully met.
-PNG validation: PASS ? source accepts only RGBA8 (color type 6, bit depth 8), non-interlaced, method-0 compression/filter images; uses createInflate streaming over consecutive IDAT chunks, limits output to IHDR-derived scanline length, checks stream termination, bytesWritten against compressed input length, exact output length, and filter values 0?4. Limits are 64 MiB decoded pixels/image, 64 MiB + 4096 inflated scanline bytes/image, 256 MiB aggregate decoded pixels, and 257 MiB aggregate inflated scanlines.
-Publication/validation: PASS in prepareAssets ? validatePublishedOutputs reads actual disk outputs, calls validateCommittedAssetOutputs (manifest/schema, bundle hashes and RTAB record/payload/content-type/membership validation), then compares the actual generated SVG runtime manifest to the expected render before retirement/backup cleanup. Clean-clone checks inspect lock/journal/orphan artifacts without modifying them. Caveat: exported publishAssetOutputs defaults validatePublishedOutputs to an async no-op; callers outside prepareAssets can omit the callback, so SVG runtime-manifest semantic compatibility is not guaranteed by that generic API path.
-Failure recovery: publisher has failure-injection tests asserting prior output bytes remain and recovery artifacts are retained after post-publication validation failure. Committed recovery validates actual output hashes and committed RTAB outputs before cleanup.
+ROLLED-BACK RECOVERY EVIDENCE
+The terminal rollback branch invokes verifyRolledBackTransaction before journal deletion. It checks every output against recorded prior existence and SHA-256, requires expected temporary and backup files to be absent, and verifies stale destinations remain at their recorded prior state. If deletion fails, the terminal journal remains; the next recovery repeats verification and retries deletion without re-entering rolling-back.
+The regression tests inject a first-attempt journal removal failure then assert prior bytes and unrelated files are unchanged, artifacts were not removed unexpectedly, and a subsequent recovery deletes the verified journal. Additional tests prove ambiguous output/artifact state preserves both data and journal.
 
-CURRENT GENERATED BINARY OUTPUTS (NOT EMBEDDED)
-assets/components.bin: size=76407 bytes; SHA-256=c765204592f66b0431a41b7c20a3f4ff58559757883aa39f0a81ad864a1928df; magic=RTAB; RTAB version=1.0; manifest asset count=19; bundleId=components
-assets/planets.bin: size=5109098 bytes; SHA-256=ef64dfb9a6491965d5b3870918f317f9a5632fb32eeb5c4be812b1f1829dc120; magic=RTAB; RTAB version=1.0; manifest asset count=3; bundleId=planets
-assets/ships.bin: size=111817 bytes; SHA-256=5a88e030dfbd0cecc8d2b51acf7e80dce2bdb36862838ba0ea113d84707fd65b; magic=RTAB; RTAB version=1.0; manifest asset count=10; bundleId=ships
-assets/turrets-platforms.bin: size=28296 bytes; SHA-256=943e47cfed1ff6e28bc4bca70efe0f42c9d1403b8e2a17c24643f8a61c9e126e; magic=RTAB; RTAB version=1.0; manifest asset count=2; bundleId=turrets-platforms
-The legacy public/assets/Ships/ships.bin is deleted in the current worktree and is not a current output. No bundle was deleted or regenerated by this reporting task.
+--- Recovery flow including rolled-back finalization | scripts/asset-output-publisher.mjs:805 ---
+export async function recoverAssetOutputTransaction(projectRoot, { removeJournal = unlink } = {}) {
+    const journal = await readJournal(projectRoot);
+    const artifacts = await findTransactionArtifacts(projectRoot);
+    if (!journal) {
+        if (artifacts.length > 0) {
+            throw new Error(`Orphan asset publication temporary or backup file found; inspect manually: ${artifacts[0]}`);
+        }
+        return { recovered: false };
+    }
+    journal.removeJournal = () => removeJournal(journal.journalPath);
 
-EMBEDDED WORKING-TREE SOURCE FILES
-Each section has an explicit current Git status, exact byte length, and SHA-256. Section content is the complete file byte stream as read from the working tree; line endings inside sections are not normalized.
+    const { begin } = journal;
+    const outputs = begin.outputs.map((entry) => validateJournalEntry(projectRoot, entry, begin.transactionId));
+    const destinations = new Set();
+    const expectedArtifacts = new Set();
+    const expectedOperationTargets = new Set();
+    for (const entry of outputs) {
+        if (destinations.has(entry.destination)) {
+            throw new Error(`Asset publication journal repeats an output destination: ${entry.destination}`);
+        }
+        destinations.add(entry.destination);
+        expectedOperationTargets.add(entry.destination);
+        for (const artifact of [entry.temporary, entry.backup]) {
+            if (artifact) {
+                expectedOperationTargets.add(artifact);
+                if (expectedArtifacts.has(artifact)) {
+                    throw new Error(`Asset publication journal repeats a temporary or backup path: ${artifact}`);
+                }
+                expectedArtifacts.add(artifact);
+            }
+        }
+    }
+    const staleDestinations = new Set();
+    for (const entry of begin.staleOutputs.map((item) => validateJournalEntry(projectRoot, item, begin.transactionId, true))) {
+        if (destinations.has(entry.destination) || staleDestinations.has(entry.destination)) {
+            throw new Error(`Asset publication journal has conflicting stale-output ownership: ${entry.destination}`);
+        }
+        staleDestinations.add(entry.destination);
+        expectedOperationTargets.add(entry.destination);
+    }
+    for (const record of journal.records) {
+        if (record.type === 'operation-intent') {
+            const target = resolveJournalPath(projectRoot, record.target, 'operation target');
+            if (!expectedOperationTargets.has(target)) {
+                throw new Error(`Asset publication journal operation targets an unowned path; preserving it: ${target}`);
+            }
+        }
+    }
+    for (const artifact of artifacts) {
+        if (!expectedArtifacts.has(artifact)) {
+            throw new Error(`Unreferenced asset publication artifact is ambiguous; preserving it: ${artifact}`);
+        }
+    }
 
-===== BEGIN FILE: docs/BINARY-ENCRYPT-MIGRATION.md | Git status: MODIFIED (M) | bytes: 8155 | SHA-256: 79adb341e09101cfeea140a68c23d1767a205df3d504329e1039602866f321f8 =====
+    if (journal.pendingOperation) {
+        const operation = journal.pendingOperation;
+        const target = resolveJournalPath(projectRoot, operation.target, 'operation target');
+        const actual = await fileState(target);
+        let result;
+        if (sameFileState(actual, operation.after)) {
+            result = 'applied';
+        } else if (sameFileState(actual, operation.before)) {
+            result = 'not-applied';
+        } else {
+            throw new Error(`Interrupted asset operation has an unexpected filesystem state; preserving journal and artifacts: ${target}`);
+        }
+        await appendJournal(journal, {
+            type: 'operation-complete',
+            operationId: operation.operationId,
+            operation: operation.operation,
+            target: operation.target,
+            result
+        });
+        journal.pendingOperation = null;
+    }
+
+    if (journal.state === 'rolled-back') {
+        await verifyRolledBackTransaction(projectRoot, journal);
+        await journal.removeJournal();
+        return { recovered: true, mode: 'finalized-rollback' };
+    }
+
+    const committedOutputsValid = await validateCommittedTransaction(projectRoot, journal);
+    if (['committed', 'retiring', 'complete'].includes(journal.state) && !committedOutputsValid) {
+        throw new Error('Committed asset transaction outputs are invalid; preserving journal, backups, and uncertain artifacts');
+    }
+    if (committedOutputsValid && ['preparing', 'staging', 'publishing', 'validating'].includes(journal.state)) {
+        while (journal.state !== 'validating') {
+            const nextState = {
+                preparing: 'staging',
+                staging: 'publishing',
+                publishing: 'validating'
+            }[journal.state];
+            if (!nextState) {
+                throw new Error(`Cannot validate recovered transaction from state "${journal.state}"`);
+            }
+            await appendJournalState(journal, nextState);
+        }
+        await appendJournalState(journal, 'committed');
+    }
+    if (committedOutputsValid && ['committed', 'retiring', 'complete'].includes(journal.state)) {
+        await completeCommittedTransaction(projectRoot, journal);
+        return { recovered: true, mode: 'completed-commit' };
+    }
+    await rollbackTransaction(projectRoot, journal);
+    return { recovered: true, mode: 'rolled-back' };
+}
+
+--- END Recovery flow including rolled-back finalization ---
+
+--- Prior output and artifact checks before terminal journal deletion | scripts/asset-output-publisher.mjs:636 ---
+async function verifyRolledBackTransaction(projectRoot, journal) {
+    const { begin } = journal;
+    const outputs = begin.outputs.map((entry) => validateJournalEntry(projectRoot, entry, begin.transactionId));
+    const stale = begin.staleOutputs.map((entry) => validateJournalEntry(projectRoot, entry, begin.transactionId, true));
+
+    for (const entry of outputs) {
+        const destination = await fileState(entry.destination);
+        if (destination.exists !== entry.priorExists
+            || (destination.exists && destination.sha256 !== entry.priorSha256)) {
+            throw new Error(`Rolled-back asset output no longer matches its prior state; preserving journal: ${entry.destination}`);
+        }
+        for (const artifact of [entry.temporary, entry.backup]) {
+            if (!artifact) {
+                continue;
+            }
+            const state = await fileState(artifact);
+            if (state.exists) {
+                throw new Error(`Rolled-back asset transaction artifact remains; preserving it and the journal: ${artifact}`);
+            }
+        }
+    }
+
+    for (const entry of stale) {
+        const state = await fileState(entry.destination);
+        if (state.exists !== entry.priorExists || (state.exists && state.sha256 !== entry.priorSha256)) {
+            throw new Error(`Rolled-back stale output no longer matches its prior state; preserving journal: ${entry.destination}`);
+        }
+    }
+}
+
+--- END Prior output and artifact checks before terminal journal deletion ---
+
+--- Regression: retry after final journal deletion failure | tests/asset-output-publisher.test.ts:133 ---
+test('rolled-back recovery verifies prior files and retries failed terminal journal deletion', async () => {
+    await createFixture(async (projectRoot) => {
+        const transactionId = randomUUID();
+        const destination = path.join(projectRoot, 'public', 'assets', 'ships.bin');
+        const prior = Buffer.from('prior output must remain unchanged');
+        const next = Buffer.from('replacement output');
+        const temporary = `${destination}.rtab-${transactionId}.tmp`;
+        const backup = `${destination}.rtab-${transactionId}.bak`;
+        const unrelatedPath = path.join(projectRoot, 'public', 'assets', 'operator-note.txt');
+        const unrelated = Buffer.from('unrelated file must not be removed');
+        await writeFile(destination, prior);
+        await writeFile(unrelatedPath, unrelated);
+
+        const journalPath = path.join(projectRoot, 'private', '.asset-package-transaction.jsonl');
+        await writeJournalRecords(projectRoot, [
+            {
+                type: 'begin',
+                transactionId,
+                sequence: 0,
+                state: 'preparing',
+                outputs: [journalOutput(projectRoot, destination, prior, next, transactionId)],
+                staleOutputs: []
+            },
+            {
+                type: 'state',
+                transactionId,
+                sequence: 1,
+                from: 'preparing',
+                to: 'rolling-back'
+            },
+            {
+                type: 'state',
+                transactionId,
+                sequence: 2,
+                from: 'rolling-back',
+                to: 'rolled-back'
+            }
+        ]);
+        let removalAttempts = 0;
+        const failFirstRemoval = async (target: string) => {
+            removalAttempts += 1;
+            if (removalAttempts === 1) {
+                throw new Error('injected terminal journal deletion failure');
+            }
+            await rm(target);
+        };
+
+        await assert.rejects(
+            withAssetOutputLock(projectRoot, async () => {}, { removeJournal: failFirstRemoval }),
+            /injected terminal journal deletion failure/
+        );
+        assert.deepEqual(await readFile(destination), prior);
+        assert.deepEqual(await readFile(unrelatedPath), unrelated);
+        await assert.rejects(lstat(temporary), { code: 'ENOENT' });
+        await assert.rejects(lstat(backup), { code: 'ENOENT' });
+        assert.ok((await readFile(journalPath, 'utf8')).includes('"to":"rolled-back"'));
+
+        await withAssetOutputLock(projectRoot, async () => {});
+
+        assert.deepEqual(await readFile(destination), prior);
+        assert.deepEqual(await readFile(unrelatedPath), unrelated);
+        await assert.rejects(lstat(temporary), { code: 'ENOENT' });
+        await assert.rejects(lstat(backup), { code: 'ENOENT' });
+        await assert.rejects(lstat(journalPath), { code: 'ENOENT' });
+        assert.equal(removalAttempts, 1);
+    });
+});
+
+--- END Regression: retry after final journal deletion failure ---
+
+--- Regression: ambiguous terminal recovery leaves files and journal intact | tests/asset-output-publisher.test.ts:201 ---
+test('rolled-back recovery preserves the journal when prior outputs or artifacts are ambiguous', async () => {
+    for (const ambiguous of ['destination', 'temporary'] as const) {
+        await createFixture(async (projectRoot) => {
+            const transactionId = randomUUID();
+            const destination = path.join(projectRoot, 'public', 'assets', 'ships.bin');
+            const prior = Buffer.from('recorded prior output');
+            const next = Buffer.from('replacement output');
+            const temporary = `${destination}.rtab-${transactionId}.tmp`;
+            const backup = `${destination}.rtab-${transactionId}.bak`;
+            await writeFile(destination, ambiguous === 'destination' ? Buffer.from('unexpected output') : prior);
+            if (ambiguous === 'temporary') {
+                await writeFile(temporary, Buffer.from('unresolved temporary contents'));
+            }
+            const journalPath = path.join(projectRoot, 'private', '.asset-package-transaction.jsonl');
+            await writeJournalRecords(projectRoot, [
+                {
+                    type: 'begin',
+                    transactionId,
+                    sequence: 0,
+                    state: 'preparing',
+                    outputs: [journalOutput(projectRoot, destination, prior, next, transactionId)],
+                    staleOutputs: []
+                },
+                {
+                    type: 'state',
+                    transactionId,
+                    sequence: 1,
+                    from: 'preparing',
+                    to: 'rolling-back'
+                },
+                {
+                    type: 'state',
+                    transactionId,
+                    sequence: 2,
+                    from: 'rolling-back',
+                    to: 'rolled-back'
+                }
+            ]);
+            const journalBytes = await readFile(journalPath);
+
+            await assert.rejects(
+                withAssetOutputLock(projectRoot, async () => {}),
+                ambiguous === 'destination' ? /prior state/ : /artifact remains/
+            );
+
+            assert.deepEqual(await readFile(journalPath), journalBytes);
+            if (ambiguous === 'destination') {
+                assert.deepEqual(await readFile(destination), Buffer.from('unexpected output'));
+            } else {
+                assert.deepEqual(await readFile(destination), prior);
+                assert.deepEqual(await readFile(temporary), Buffer.from('unresolved temporary contents'));
+            }
+            await assert.rejects(lstat(backup), { code: 'ENOENT' });
+        });
+    }
+});
+
+--- END Regression: ambiguous terminal recovery leaves files and journal intact ---
+
+REQUIRED PUBLICATION VALIDATION CALLBACK EVIDENCE
+The callback guard runs at the start of publishAssetOutputs before transaction ID generation, output checks, journal creation, or output mutations. Its regression test calls the publisher without the callback, checks the explicit TypeError, compares the output directory listing, and confirms neither a destination nor transaction journal was created.
+
+--- Callback guard before transaction setup | scripts/asset-output-publisher.mjs:945 ---
+export async function publishAssetOutputs({
+    projectRoot,
+    outputs,
+    stalePaths = [],
+    linkFile = link,
+    validatePublishedOutputs
+}) {
+    if (typeof validatePublishedOutputs !== 'function') {
+        throw new TypeError('publishAssetOutputs requires an explicit validatePublishedOutputs callback');
+    }
+
+--- END Callback guard before transaction setup ---
+
+--- Regression: omission is rejected without writes | tests/asset-output-publisher.test.ts:688 ---
+test('publisher requires a validation callback before touching outputs or journal state', async () => {
+    await createFixture(async (projectRoot) => {
+        const assetsDirectory = path.join(projectRoot, 'public', 'assets');
+        const before = await readdir(assetsDirectory);
+        const destination = path.join(assetsDirectory, 'must-not-be-created.bin');
+
+        await assert.rejects(
+            publishAssetOutputs({
+                projectRoot,
+                outputs: new Map([[destination, Buffer.from('generated output')]])
+            }),
+            /requires an explicit validatePublishedOutputs callback/
+        );
+
+        assert.deepEqual(await readdir(assetsDirectory), before);
+        await assert.rejects(lstat(destination), { code: 'ENOENT' });
+        await assert.rejects(
+            lstat(path.join(projectRoot, 'private', '.asset-package-transaction.jsonl')),
+            { code: 'ENOENT' }
+        );
+    });
+});
+
+--- END Regression: omission is rejected without writes ---
+
+CURRENT GENERATED BINARY OUTPUTS (METADATA ONLY; NOT EMBEDDED)
+public/assets/components.bin: size=76407 bytes; SHA-256=c765204592f66b0431a41b7c20a3f4ff58559757883aa39f0a81ad864a1928df; RTAB version=1.0; asset count=19; bundleId=components
+public/assets/planets.bin: size=5109098 bytes; SHA-256=ef64dfb9a6491965d5b3870918f317f9a5632fb32eeb5c4be812b1f1829dc120; RTAB version=1.0; asset count=3; bundleId=planets
+public/assets/ships.bin: size=111817 bytes; SHA-256=5a88e030dfbd0cecc8d2b51acf7e80dce2bdb36862838ba0ea113d84707fd65b; RTAB version=1.0; asset count=10; bundleId=ships
+public/assets/turrets-platforms.bin: size=28296 bytes; SHA-256=943e47cfed1ff6e28bc4bca70efe0f42c9d1403b8e2a17c24643f8a61c9e126e; RTAB version=1.0; asset count=2; bundleId=turrets-platforms
+The prior public/assets/Ships/ships.bin remains deleted in the current worktree; this report did not alter any bundle.
+
+ALL 17 STAGE A FILES ? COMPLETE CURRENT CONTENTS
+Each section records current Git status, exact byte length, and SHA-256. File contents are inserted as raw worktree bytes without line-ending normalization.
+
+===== BEGIN FILE: docs/BINARY-ENCRYPT-MIGRATION.md | Git status: MODIFIED (M) | bytes: 8833 | SHA-256: 4b5cbf526db32f0d0b4a0385da3f9e3513bf731d8ecbbd52069c31959386bbfc =====
 #: 1
 Phase: Private source mapping
 Depends on: —
@@ -149,9 +463,9 @@ Registry schema 1.1 and generated manifest schema 1.1 are independent from the u
 
 PNG validation accepts only non-interlaced RGBA8 images using compression and filter method 0, with dimensions up to 4096×4096 and a maximum compressed file size of 8 MiB (32 MiB aggregate). It independently limits decoded pixel bytes to 64 MiB per image and 256 MiB aggregate, and inflated scanline bytes to 64 MiB + 4096 bytes per image and 257 MiB aggregate. The validator checks chunk ordering and CRCs, requires one fully consumed zlib stream across consecutive IDAT chunks, bounds streaming decompression to the exact IHDR-derived scanline length, and validates every scanline filter byte. PNG payload bytes are preserved; the packager does not re-encode images.
 
-Preparation uses an exclusive process lock and an append-only JSONL transaction journal. Each checksummed record carries the transaction ID and next sequence number; every output filesystem operation is preceded by a flushed intent and followed by a flushed completion. A committed-state record explicitly marks the new manifest as committed. Recovery runs only after exclusive lock acquisition, validates the entire journal and actual file hashes, then completes a validated commit or rolls back verified prior outputs. Malformed, truncated, or ambiguous journals and unexpected artifacts remain untouched for manual inspection.
+Preparation uses an exclusive process lock and an append-only JSONL transaction journal. Each checksummed record carries the transaction ID and next sequence number; every ordinary output filesystem operation is preceded by a flushed intent and followed by a flushed completion. Lock creation/removal and journal creation/removal are transaction-control lifecycle operations and are not recursively recorded inside the journal they control. A committed-state record explicitly marks the new manifest as committed. Recovery runs only after exclusive lock acquisition, validates the entire journal and actual file hashes, then completes a validated commit or rolls back verified prior outputs. If recovery finds a durable `rolled-back` state, it re-verifies all prior output hashes and confirms temporary/backup artifacts are absent before removing the journal; it never repeats the rollback state transition. Malformed, truncated, or ambiguous journals and unexpected artifacts remain untouched for manual inspection.
 
-An existing lock is never removed automatically, including when its PID appears inactive. To clear a stale lock, stop all asset preparation processes, inspect the lock JSON, and independently verify its owner and process-start identity. On Windows, inspect `Get-Process -Id <pid> -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path` and `Get-CimInstance Win32_Process -Filter "ProcessId = <pid>" | Select-Object ProcessId,CommandLine,CreationDate`; compare the executable, command line, and creation time with the lock metadata and confirm no preparation process is active. On Linux, compare `processStartIdentity` with `/proc/<pid>/stat` start ticks. Hostname, PID, or age alone is not proof of staleness. Only after an operator confirms the owner is no longer active, remove that exact file from the repository root with `Remove-Item -LiteralPath .\\private\\.asset-package.lock` (or the platform's equivalent); never remove journal or bundle artifacts as part of lock cleanup. If the owner cannot be verified or the identity is ambiguous, preserve the lock and escalate rather than retrying preparation. On clean clones without `private/`, validation checks for lock, journal, and orphan transaction files without recovering or modifying them.
+An existing lock is never removed automatically, including when its PID appears inactive. The `processStartIdentity` written by the current implementation is a Linux `/proc` start-tick identity where available; the Windows fallback, `estimated-unix-ms`, is only an estimate derived from process uptime and is advisory, not an OS-native process creation identity. To clear a stale lock, stop all asset preparation processes, inspect the lock JSON, and independently verify the owner and process start using the operating system. On Windows, inspect `Get-Process -Id <pid> -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path` and `Get-CimInstance Win32_Process -Filter "ProcessId = <pid>" | Select-Object ProcessId,CommandLine,CreationDate`; compare the executable, command line, and creation time with the lock metadata and confirm no preparation process is active. On Linux, compare `processStartIdentity` with `/proc/<pid>/stat` start ticks. Hostname, PID, age, or the Windows estimate alone is not proof of staleness. Only after an operator confirms the owner is no longer active, remove that exact file from the repository root with `Remove-Item -LiteralPath .\\private\\.asset-package.lock` (or the platform's equivalent); never remove journal or bundle artifacts as part of lock cleanup. If the owner cannot be verified or the identity is ambiguous, preserve the lock and escalate rather than retrying preparation. On clean clones without `private/`, validation checks for transaction artifacts without recovering or modifying them.
 
 Stage A does not add a filesystem listener, runtime hot reload, mod discovery/loading, Phaser bundle loading, or Phase 3C behavior.
 ===== END FILE: docs/BINARY-ENCRYPT-MIGRATION.md =====
@@ -258,6 +572,7 @@ Stage A does not add a filesystem listener, runtime hot reload, mod discovery/lo
     }
   }
 }
+
 ===== END FILE: public/assets/asset-manifest-schema.json =====
 
 ===== BEGIN FILE: public/assets/asset-manifest.json | Git status: MODIFIED (M) | bytes: 13140 | SHA-256: 982a9f7b4bf1169b07a48baa67ebeeb7f1ebcc16f3873088e1183ecd3602f7dc =====
@@ -608,6 +923,7 @@ Stage A does not add a filesystem listener, runtime hot reload, mod discovery/lo
     }
   ]
 }
+
 ===== END FILE: public/assets/asset-manifest.json =====
 
 ===== BEGIN FILE: scripts/asset-registry.json | Git status: MODIFIED (M) | bytes: 8281 | SHA-256: f6b20435a02cb7885369f60d1ad2d699f96712ae4f28bd8aa0e8af9bde25f76c =====
@@ -854,6 +1170,7 @@ Stage A does not add a filesystem listener, runtime hot reload, mod discovery/lo
     }
   ]
 }
+
 ===== END FILE: scripts/asset-registry.json =====
 
 ===== BEGIN FILE: scripts/asset-registry.mjs | Git status: MODIFIED (M) | bytes: 6451 | SHA-256: 8f25764775bf0aa0d5f976f1c19fa69d1409a225fcd93f4c1ec89f9dd5357923 =====
@@ -1009,6 +1326,7 @@ export function resolveAssetSource(logicalPath, projectRoot = PROJECT_ROOT) {
 }
 
 export { PROJECT_ROOT };
+
 ===== END FILE: scripts/asset-registry.mjs =====
 
 ===== BEGIN FILE: scripts/generate-public-svg-manifest.mjs | Git status: MODIFIED (M) | bytes: 8473 | SHA-256: dfb811a6e0f056037db9930ab5d5770259cf181c6d58f07c5a41280415008252 =====
@@ -1236,6 +1554,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
         process.exitCode = 1;
     });
 }
+
 ===== END FILE: scripts/generate-public-svg-manifest.mjs =====
 
 ===== BEGIN FILE: scripts/migrate-assets-private.mjs | Git status: MODIFIED (M) | bytes: 23597 | SHA-256: 6f4e61d711e07345aa03854a8744e626918b5140b318dc16b5493e2e6900544d =====
@@ -1816,6 +2135,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
             process.exitCode = 1;
         });
 }
+
 ===== END FILE: scripts/migrate-assets-private.mjs =====
 
 ===== BEGIN FILE: scripts/package-assets.mjs | Git status: MODIFIED (M) | bytes: 38245 | SHA-256: f44c9d89767f4d43570d6b22fcc9a8743cabd213d9036eb46db9268195de40cf =====
@@ -2660,9 +2980,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
             process.exitCode = 1;
         });
 }
+
 ===== END FILE: scripts/package-assets.mjs =====
 
-===== BEGIN FILE: scripts/prepare-assets.mjs | Git status: MODIFIED (M) | bytes: 7516 | SHA-256: da89875fdc86dade9ce1a54b721ae2170176374385d350bcf1ae5e6b1eaafd74 =====
+===== BEGIN FILE: scripts/prepare-assets.mjs | Git status: MODIFIED (M) | bytes: 7609 | SHA-256: bb833ca7d5fa5213e6b9d7ac68a86d44199f65fb74a679ccfac06d7b03894d70 =====
 import { createHash } from 'node:crypto';
 import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -2697,7 +3018,7 @@ async function privateAssetsRootExists(projectRoot) {
         assetsInfo = await lstat(assetsRoot);
     } catch (error) {
         if (error.code === 'ENOENT') {
-            return false;
+            throw new Error(`Private source root exists but is missing the required assets directory: ${assetsRoot}`);
         }
         throw error;
     }
@@ -2824,6 +3145,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
         process.exitCode = 1;
     });
 }
+
 ===== END FILE: scripts/prepare-assets.mjs =====
 
 ===== BEGIN FILE: tests/migrate-assets-private.test.ts | Git status: MODIFIED (M) | bytes: 14224 | SHA-256: a8e3873a388f9b72b6a593e0a3f8abb78a3014f1a18df5446f29ca551f81e980 =====
@@ -3121,9 +3443,10 @@ test('a partial install failure removes only files installed by the current migr
         assert.equal(links, 2);
     });
 });
+
 ===== END FILE: tests/migrate-assets-private.test.ts =====
 
-===== BEGIN FILE: tests/package-assets.test.ts | Git status: MODIFIED (M) | bytes: 31476 | SHA-256: 25e17cfd9d20a134bace3ee2191a89f7e37f6c40aac3d0edebb667de5a7d3a06 =====
+===== BEGIN FILE: tests/package-assets.test.ts | Git status: MODIFIED (M) | bytes: 33241 | SHA-256: f933ae0de38d84247639ac64d47502816d69fe0669978204345ef32d04b07b65 =====
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
@@ -3704,25 +4027,61 @@ test('an existing but invalid private root is not treated as an absent clean clo
     });
 });
 
-test('clean-clone mode detects locks, journals, and orphan artifacts without modifying outputs', async () => {
+test('existing private roots without assets fail instead of entering clean-clone mode', async () => {
+    await createProjectFixture(async (projectRoot) => {
+        await prepareAssets({ projectRoot });
+        const outputs = await snapshotOutputs(projectRoot);
+        const privateRoot = path.join(projectRoot, 'private');
+        await rm(path.join(privateRoot, 'assets'), { recursive: true });
+
+        await assert.rejects(prepareAssets({ projectRoot }), /missing the required assets directory/);
+        await assertSnapshotUnchanged(outputs);
+    });
+
+    await createProjectFixture(async (projectRoot) => {
+        await prepareAssets({ projectRoot });
+        const outputs = await snapshotOutputs(projectRoot);
+        const privateRoot = path.join(projectRoot, 'private');
+        await rm(path.join(privateRoot, 'assets'), { recursive: true });
+        await mkdir(path.join(privateRoot, 'staging'));
+        await writeFile(path.join(privateRoot, 'staging', 'note.txt'), 'not an assets source tree');
+
+        await assert.rejects(prepareAssets({ projectRoot }), /missing the required assets directory/);
+        await assertSnapshotUnchanged(outputs);
+    });
+});
+
+test('an existing private/assets path must be a real directory', async () => {
+    await createProjectFixture(async (projectRoot) => {
+        await prepareAssets({ projectRoot });
+        const outputs = await snapshotOutputs(projectRoot);
+        const privateRoot = path.join(projectRoot, 'private');
+        await rm(path.join(privateRoot, 'assets'), { recursive: true });
+        await writeFile(path.join(privateRoot, 'assets'), 'not a directory');
+
+        await assert.rejects(prepareAssets({ projectRoot }), /Private asset source root exists but is not a real directory/);
+        await assertSnapshotUnchanged(outputs);
+    });
+});
+
+test('preparation preserves existing locks and journals; clean-clone mode rejects orphan artifacts read-only', async () => {
     for (const kind of ['lock', 'journal', 'orphan'] as const) {
         await createProjectFixture(async (projectRoot) => {
             await prepareAssets({ projectRoot });
             const snapshots = await snapshotOutputs(projectRoot);
             const privateRoot = path.join(projectRoot, 'private');
-            await rm(path.join(privateRoot, 'assets'), { recursive: true });
 
             if (kind === 'lock') {
                 const lockPath = path.join(privateRoot, '.asset-package.lock');
                 const contents = Buffer.from('{"pid":1,"hostname":"test","token":"active"}\n');
                 await writeFile(lockPath, contents);
-                await assert.rejects(prepareAssets({ projectRoot }), /publication lock.*without recovery/);
+                await assert.rejects(prepareAssets({ projectRoot }), /lock already exists/);
                 assert.deepEqual(await readFile(lockPath), contents);
             } else if (kind === 'journal') {
                 const journalPath = path.join(privateRoot, '.asset-package-transaction.jsonl');
                 const contents = Buffer.from('{"type":"begin","transactionId":"unfinished"}');
                 await writeFile(journalPath, contents);
-                await assert.rejects(prepareAssets({ projectRoot }), /publication journal.*without recovery/);
+                await assert.rejects(prepareAssets({ projectRoot }), /journal is truncated/);
                 assert.deepEqual(await readFile(journalPath), contents);
             } else {
                 await rm(privateRoot, { recursive: true });
@@ -3746,9 +4105,10 @@ test('generated manifest schema 1.1 contains both content types without bundle m
     assert.equal('assetIds' in schema.properties.bundles.items.properties, false);
     assert.equal('textureKeys' in schema.properties.bundles.items.properties, false);
 });
+
 ===== END FILE: tests/package-assets.test.ts =====
 
-===== BEGIN FILE: scripts/asset-output-publisher.mjs | Git status: UNTRACKED (??) | bytes: 48904 | SHA-256: 46a40958ed712b3f4db18b87859862d1b58708a8d06db201fa5f8548b389b8e5 =====
+===== BEGIN FILE: scripts/asset-output-publisher.mjs | Git status: UNTRACKED (??) | bytes: 51166 | SHA-256: cc6d0dcb95d0603b57378a7465ddcd9e763ddaa0d7a87386734fd6ad2d0f788f =====
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import {
@@ -4050,6 +4410,7 @@ async function readJournal(projectRoot) {
     const begin = records[0];
     return {
         journalPath,
+        removeJournal: () => unlink(journalPath),
         records,
         begin,
         transactionId: begin.transactionId,
@@ -4309,6 +4670,11 @@ async function rollbackTransaction(projectRoot, journal, { preserveRecoveryArtif
         }
     }
 
+    if (journal.state === 'rolled-back') {
+        await verifyRolledBackTransaction(projectRoot, journal);
+        await journal.removeJournal();
+        return;
+    }
     if (journal.state !== 'rolling-back') {
         await appendJournalState(journal, 'rolling-back');
     }
@@ -4374,7 +4740,37 @@ async function rollbackTransaction(projectRoot, journal, { preserveRecoveryArtif
     }
     if (!preserveRecoveryArtifacts) {
         await appendJournalState(journal, 'rolled-back');
-        await unlink(journal.journalPath);
+        await journal.removeJournal();
+    }
+}
+
+async function verifyRolledBackTransaction(projectRoot, journal) {
+    const { begin } = journal;
+    const outputs = begin.outputs.map((entry) => validateJournalEntry(projectRoot, entry, begin.transactionId));
+    const stale = begin.staleOutputs.map((entry) => validateJournalEntry(projectRoot, entry, begin.transactionId, true));
+
+    for (const entry of outputs) {
+        const destination = await fileState(entry.destination);
+        if (destination.exists !== entry.priorExists
+            || (destination.exists && destination.sha256 !== entry.priorSha256)) {
+            throw new Error(`Rolled-back asset output no longer matches its prior state; preserving journal: ${entry.destination}`);
+        }
+        for (const artifact of [entry.temporary, entry.backup]) {
+            if (!artifact) {
+                continue;
+            }
+            const state = await fileState(artifact);
+            if (state.exists) {
+                throw new Error(`Rolled-back asset transaction artifact remains; preserving it and the journal: ${artifact}`);
+            }
+        }
+    }
+
+    for (const entry of stale) {
+        const state = await fileState(entry.destination);
+        if (state.exists !== entry.priorExists || (state.exists && state.sha256 !== entry.priorSha256)) {
+            throw new Error(`Rolled-back stale output no longer matches its prior state; preserving journal: ${entry.destination}`);
+        }
     }
 }
 
@@ -4517,7 +4913,7 @@ export async function assertNoPendingAssetOutputTransaction(projectRoot) {
     }
 }
 
-export async function recoverAssetOutputTransaction(projectRoot) {
+export async function recoverAssetOutputTransaction(projectRoot, { removeJournal = unlink } = {}) {
     const journal = await readJournal(projectRoot);
     const artifacts = await findTransactionArtifacts(projectRoot);
     if (!journal) {
@@ -4526,6 +4922,7 @@ export async function recoverAssetOutputTransaction(projectRoot) {
         }
         return { recovered: false };
     }
+    journal.removeJournal = () => removeJournal(journal.journalPath);
 
     const { begin } = journal;
     const outputs = begin.outputs.map((entry) => validateJournalEntry(projectRoot, entry, begin.transactionId));
@@ -4592,6 +4989,12 @@ export async function recoverAssetOutputTransaction(projectRoot) {
         journal.pendingOperation = null;
     }
 
+    if (journal.state === 'rolled-back') {
+        await verifyRolledBackTransaction(projectRoot, journal);
+        await journal.removeJournal();
+        return { recovered: true, mode: 'finalized-rollback' };
+    }
+
     const committedOutputsValid = await validateCommittedTransaction(projectRoot, journal);
     if (['committed', 'retiring', 'complete'].includes(journal.state) && !committedOutputsValid) {
         throw new Error('Committed asset transaction outputs are invalid; preserving journal, backups, and uncertain artifacts');
@@ -4618,10 +5021,10 @@ export async function recoverAssetOutputTransaction(projectRoot) {
     return { recovered: true, mode: 'rolled-back' };
 }
 
-export async function withAssetOutputLock(projectRoot, action) {
+export async function withAssetOutputLock(projectRoot, action, recoveryOptions) {
     const lock = await acquireLock(projectRoot);
     try {
-        await recoverAssetOutputTransaction(projectRoot);
+        await recoverAssetOutputTransaction(projectRoot, recoveryOptions);
         return await action();
     } finally {
         await releaseLock(lock);
@@ -4655,8 +5058,12 @@ export async function publishAssetOutputs({
     outputs,
     stalePaths = [],
     linkFile = link,
-    validatePublishedOutputs = async () => {}
+    validatePublishedOutputs
 }) {
+    if (typeof validatePublishedOutputs !== 'function') {
+        throw new TypeError('publishAssetOutputs requires an explicit validatePublishedOutputs callback');
+    }
+
     const transactionId = randomUUID();
     const outputEntries = [];
     const staleEntries = [];
@@ -4722,6 +5129,7 @@ export async function publishAssetOutputs({
         journalPath,
         transactionId,
         begin,
+        removeJournal: () => unlink(journalPath),
         records: [begin],
         state: 'preparing',
         pendingOperation: null,
@@ -4899,6 +5307,7 @@ export async function publishAssetOutputs({
         throw error;
     }
 }
+
 ===== END FILE: scripts/asset-output-publisher.mjs =====
 
 ===== BEGIN FILE: scripts/migrate-planet-assets-private.mjs | Git status: UNTRACKED (??) | bytes: 12070 | SHA-256: d8cde853af068d5654a6595a197793bff4f3b5ed2e9412b587f7b1734c7129c7 =====
@@ -5175,6 +5584,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
             process.exitCode = 1;
         });
 }
+
 ===== END FILE: scripts/migrate-planet-assets-private.mjs =====
 
 ===== BEGIN FILE: scripts/validate-png.mjs | Git status: UNTRACKED (??) | bytes: 8543 | SHA-256: 78ec2b783dbaf135bd40657df80688911350f7a331e7ed1dfc8445886395c74b =====
@@ -5393,9 +5803,10 @@ export async function validatePng(bytes, asset) {
         scanlineBytes
     };
 }
+
 ===== END FILE: scripts/validate-png.mjs =====
 
-===== BEGIN FILE: tests/asset-output-publisher.test.ts | Git status: UNTRACKED (??) | bytes: 31510 | SHA-256: dac3b38d147a436a9178630a4d2b96e49210672d3bdbdc4c33043addb01e7789 =====
+===== BEGIN FILE: tests/asset-output-publisher.test.ts | Git status: UNTRACKED (??) | bytes: 38292 | SHA-256: d26eaa1d9bce8a1bc28bc2da3fbb9d457cb8a35ddff3642559012bf2c4a3e800 =====
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -5526,6 +5937,131 @@ test('recovery rolls back an interrupted publication and restores the prior outp
         await assert.rejects(lstat(backup), { code: 'ENOENT' });
         await assert.rejects(lstat(path.join(projectRoot, 'private', '.asset-package-transaction.jsonl')), { code: 'ENOENT' });
     });
+});
+
+test('rolled-back recovery verifies prior files and retries failed terminal journal deletion', async () => {
+    await createFixture(async (projectRoot) => {
+        const transactionId = randomUUID();
+        const destination = path.join(projectRoot, 'public', 'assets', 'ships.bin');
+        const prior = Buffer.from('prior output must remain unchanged');
+        const next = Buffer.from('replacement output');
+        const temporary = `${destination}.rtab-${transactionId}.tmp`;
+        const backup = `${destination}.rtab-${transactionId}.bak`;
+        const unrelatedPath = path.join(projectRoot, 'public', 'assets', 'operator-note.txt');
+        const unrelated = Buffer.from('unrelated file must not be removed');
+        await writeFile(destination, prior);
+        await writeFile(unrelatedPath, unrelated);
+
+        const journalPath = path.join(projectRoot, 'private', '.asset-package-transaction.jsonl');
+        await writeJournalRecords(projectRoot, [
+            {
+                type: 'begin',
+                transactionId,
+                sequence: 0,
+                state: 'preparing',
+                outputs: [journalOutput(projectRoot, destination, prior, next, transactionId)],
+                staleOutputs: []
+            },
+            {
+                type: 'state',
+                transactionId,
+                sequence: 1,
+                from: 'preparing',
+                to: 'rolling-back'
+            },
+            {
+                type: 'state',
+                transactionId,
+                sequence: 2,
+                from: 'rolling-back',
+                to: 'rolled-back'
+            }
+        ]);
+        let removalAttempts = 0;
+        const failFirstRemoval = async (target: string) => {
+            removalAttempts += 1;
+            if (removalAttempts === 1) {
+                throw new Error('injected terminal journal deletion failure');
+            }
+            await rm(target);
+        };
+
+        await assert.rejects(
+            withAssetOutputLock(projectRoot, async () => {}, { removeJournal: failFirstRemoval }),
+            /injected terminal journal deletion failure/
+        );
+        assert.deepEqual(await readFile(destination), prior);
+        assert.deepEqual(await readFile(unrelatedPath), unrelated);
+        await assert.rejects(lstat(temporary), { code: 'ENOENT' });
+        await assert.rejects(lstat(backup), { code: 'ENOENT' });
+        assert.ok((await readFile(journalPath, 'utf8')).includes('"to":"rolled-back"'));
+
+        await withAssetOutputLock(projectRoot, async () => {});
+
+        assert.deepEqual(await readFile(destination), prior);
+        assert.deepEqual(await readFile(unrelatedPath), unrelated);
+        await assert.rejects(lstat(temporary), { code: 'ENOENT' });
+        await assert.rejects(lstat(backup), { code: 'ENOENT' });
+        await assert.rejects(lstat(journalPath), { code: 'ENOENT' });
+        assert.equal(removalAttempts, 1);
+    });
+});
+
+test('rolled-back recovery preserves the journal when prior outputs or artifacts are ambiguous', async () => {
+    for (const ambiguous of ['destination', 'temporary'] as const) {
+        await createFixture(async (projectRoot) => {
+            const transactionId = randomUUID();
+            const destination = path.join(projectRoot, 'public', 'assets', 'ships.bin');
+            const prior = Buffer.from('recorded prior output');
+            const next = Buffer.from('replacement output');
+            const temporary = `${destination}.rtab-${transactionId}.tmp`;
+            const backup = `${destination}.rtab-${transactionId}.bak`;
+            await writeFile(destination, ambiguous === 'destination' ? Buffer.from('unexpected output') : prior);
+            if (ambiguous === 'temporary') {
+                await writeFile(temporary, Buffer.from('unresolved temporary contents'));
+            }
+            const journalPath = path.join(projectRoot, 'private', '.asset-package-transaction.jsonl');
+            await writeJournalRecords(projectRoot, [
+                {
+                    type: 'begin',
+                    transactionId,
+                    sequence: 0,
+                    state: 'preparing',
+                    outputs: [journalOutput(projectRoot, destination, prior, next, transactionId)],
+                    staleOutputs: []
+                },
+                {
+                    type: 'state',
+                    transactionId,
+                    sequence: 1,
+                    from: 'preparing',
+                    to: 'rolling-back'
+                },
+                {
+                    type: 'state',
+                    transactionId,
+                    sequence: 2,
+                    from: 'rolling-back',
+                    to: 'rolled-back'
+                }
+            ]);
+            const journalBytes = await readFile(journalPath);
+
+            await assert.rejects(
+                withAssetOutputLock(projectRoot, async () => {}),
+                ambiguous === 'destination' ? /prior state/ : /artifact remains/
+            );
+
+            assert.deepEqual(await readFile(journalPath), journalBytes);
+            if (ambiguous === 'destination') {
+                assert.deepEqual(await readFile(destination), Buffer.from('unexpected output'));
+            } else {
+                assert.deepEqual(await readFile(destination), prior);
+                assert.deepEqual(await readFile(temporary), Buffer.from('unresolved temporary contents'));
+            }
+            await assert.rejects(lstat(backup), { code: 'ENOENT' });
+        });
+    }
 });
 
 test('recovery restores schema 1.1 if interrupted before manifest 1.1 is committed', async () => {
@@ -5958,6 +6494,29 @@ test('post-publication validation failure restores known-good outputs and preser
     });
 });
 
+test('publisher requires a validation callback before touching outputs or journal state', async () => {
+    await createFixture(async (projectRoot) => {
+        const assetsDirectory = path.join(projectRoot, 'public', 'assets');
+        const before = await readdir(assetsDirectory);
+        const destination = path.join(assetsDirectory, 'must-not-be-created.bin');
+
+        await assert.rejects(
+            publishAssetOutputs({
+                projectRoot,
+                outputs: new Map([[destination, Buffer.from('generated output')]])
+            }),
+            /requires an explicit validatePublishedOutputs callback/
+        );
+
+        assert.deepEqual(await readdir(assetsDirectory), before);
+        await assert.rejects(lstat(destination), { code: 'ENOENT' });
+        await assert.rejects(
+            lstat(path.join(projectRoot, 'private', '.asset-package-transaction.jsonl')),
+            { code: 'ENOENT' }
+        );
+    });
+});
+
 test('native Windows hard-link publication updates a validated output set', async (t) => {
     if (process.platform !== 'win32') {
         t.skip('requires native Windows filesystem behavior');
@@ -5998,7 +6557,8 @@ test('unsupported hard-link publication fails clearly and preserves the prior de
             publishAssetOutputs({
                 projectRoot,
                 outputs: new Map([[destination, Buffer.from('replacement')]]),
-                linkFile: unsupportedLink
+                linkFile: unsupportedLink,
+                validatePublishedOutputs: async () => {}
             }),
             /requires hard-link support on the same filesystem/
         );
@@ -6027,7 +6587,8 @@ test('native Windows no-overwrite publication preserves a racing destination', a
             publishAssetOutputs({
                 projectRoot,
                 outputs: new Map([[destination, Buffer.from('generated output')]]),
-                linkFile: racingLink
+                linkFile: racingLink,
+                validatePublishedOutputs: async () => {}
             }),
             /unexpected contents/
         );
@@ -6036,6 +6597,7 @@ test('native Windows no-overwrite publication preserves a racing destination', a
         assert.equal(await readFile(path.join(projectRoot, 'private', '.asset-package-transaction.jsonl'), 'utf8').then((text) => text.length > 0), true);
     });
 });
+
 ===== END FILE: tests/asset-output-publisher.test.ts =====
 
 ===== BEGIN FILE: tests/migrate-planet-assets-private.test.ts | Git status: UNTRACKED (??) | bytes: 5637 | SHA-256: 10795be68e44a6bc4758ab6ea5dbb84844d08de8d3394249abfc0677cba087cc =====
@@ -6158,6 +6720,7 @@ test('partial no-overwrite publication rolls back only files installed by this m
         assert.equal((await readdir(path.join(projectRoot, 'private'))).some((name) => name.startsWith('.planet-asset-migration-')), false);
     });
 });
+
 ===== END FILE: tests/migrate-planet-assets-private.test.ts =====
 
 ===== BEGIN FILE: tests/validate-png.test.ts | Git status: UNTRACKED (??) | bytes: 7819 | SHA-256: d1310866aff204a0c2a7df7c9fbcc24489778b79e8559de001b14e1b540eb027 =====
@@ -6350,4 +6913,5 @@ test('applies independent aggregate decoded-pixel and inflated-scanline limits',
     );
     assert.doesNotThrow(() => assertPngAggregateDecodedLimits(100, 120, 'test aggregate', limits));
 });
+
 ===== END FILE: tests/validate-png.test.ts =====
