@@ -1,0 +1,94 @@
+Phase 3C read-only technical proposal
+Audit state
+The worktree is clean on feature/phase-3b3-stage-a, at HEAD dcbeb0d1a32c6eb72c4f93c9875d69bf6009648a. The supplied dd9cdf7… HEAD is stale; it predates the Phase 3B.3 commit. The ignored private/ directory is present. I made no changes and ran no tests.
+
+Repository guidance says to follow ARCHITECTURE.md and use Phaser 4 APIs. The referenced repository CONVENTIONS.md is absent. The Phase 3B.3 documentation identifies Phase 3C as a separate stage; this proposal leaves the packaging implementation and outputs intact.
+
+1. Existing runtime loading architecture
+main.ts contains both BootScene and GameScene. Phaser is created with those two scenes at main.ts. Currently, BootScene.preload() queues three loose PNGs, 31 loose game SVGs from the generated manifest, and three separate minimap SVGs. It also creates five dummy textures: ship-core, ship-wing, hardpoint, bullet, and enemy-core. In create(), it registers aliases for the 31 game SVGs, then starts GameScene.
+
+GameScene.create() builds the space and planet backgrounds, player, physics, controls, and minimap. The Game instance is constructed in the GameScene constructor, before GameScene.create() runs. To keep failure before gameplay initialization, I recommend moving that construction into GameScene.create(), which is only reached after BootScene explicitly starts it.
+
+The current planet texture keys are planetMap111, planetMap122, and planetMap692. PlanetBackground passes the selected key to PlanetShader, which supplies it as the Shader Game Object’s sampler texture. Its shader and geometry need no migration changes. See Planet.ts and planets.glsl.
+
+The 31 bundled SVG texture keys are:
+
+Components: public-components-aistiaria-01_side_hull_angular, public-components-aistiaria-02_hex_cockpit, public-components-aistiaria-03_side_wing, public-components-aistiaria-04_rear_engine_pod, public-components-aistiaria-05_nose_section, public-components-aistiaria-06_swept_wing, public-components-aistiaria-07_connector_module, public-components-aistiaria-08_tail_fuselage, public-components-yutiarin-part-1 through public-components-yutiarin-part-10, and public-components-yutiarin-wing-1.
+Ships: public-ships-yutiarin-kinetic-lance-frigate, public-ships-alien-interceptor, public-ships-alien-leviathan, public-ships-alien-mothership, public-ships-curved-corvette, public-ships-faceted-cruiser, public-ships-human-dreadnought, public-ships-human-frigate, public-ships-void-dreadnought, and public-ships-yutiarin-starblade-destroyer.
+Turrets and platforms: public-turrets-platforms-yutiarin-defense-turret and public-turrets-platforms-yutiarin-perimeter-turret.
+The three aliases are central-hull, human-dreadnought, and alien-interceptor. Their mappings, plus the manifest keys, URLs, and alias lists, are recorded in publicSvgManifest.ts. Its only runtime consumer is currently main.ts; tests also consume it. I recommend using it as an SVG identity cross-check and leaving it unchanged.
+
+The minimap assets are outside the RTAB inventory: minimap-capital-ship, minimap-corvette, and minimap-fighter, loaded from /minimap/Capital-Ship.svg, /minimap/Corvette.svg, and /minimap/Fighter.svg. MiniMap.ts also uses the dummy hardpoint texture for its arrow. Keep these minimap loads separate.
+
+Other runtime texture dependencies found are the dummy keys above, plus bullet in the weapon/projectile paths. The player uses human-dreadnought, ship-wing, and hardpoint. Debug ships use the bundled keys public-ships-human-frigate and public-ships-alien-interceptor.
+
+2. Integration points
+Replace the loose game asset loads and alias loop in main.ts with a startup call to the RTAB runtime loader. Keep dummy texture generation and minimap SVG loads there.
+Defer Game construction until GameScene.create() so an unsuccessful asset load leaves gameplay scene initialization unstarted.
+Start GameScene only after all required bundle validation, payload decoding, texture registration, and key availability checks complete.
+Keep Planet.ts, planets.glsl, and publicSvgManifest.ts unchanged.
+3. Browser-side RTAB parser design
+Create a browser-safe parser using Uint8Array, DataView, BigInt, TextDecoder, and crypto.subtle; do not import the Node packager or use Node-only Buffer/crypto APIs.
+
+The format evidence is in package-assets.mjs, which defines a 64-byte header, 28-byte index header, 72-byte records, a 32-byte index digest, versions 0x0100/0x0101, header flags 0x0003, and content codes SVG 0/PNG 1. The existing Node validator at package-assets.mjs checks:
+
+RTAB magic, version, header flags and zeroed reserved bytes.
+Little-endian header offsets and sizes, index placement, INDX magic, index flags, record size, and index digest.
+Contiguous string-table and payload ranges, valid UTF-8 IDs, unique and sorted IDs, and no unreferenced bytes or trailing payload.
+Compression method NONE, zero record flags, nonzero equal stored/original sizes, and payload digest.
+Version-specific content rules: v1.0 permits SVG; v1.1 permits SVG and PNG.
+The browser reader should retain those checks, applying bounds checks in BigInt before converting offsets to JS numbers. Also verify each full bundle SHA-256 against its manifest bundleSha256, and each payload digest against both the record digest and its sourceSha256.
+
+4. Manifest and inventory validation
+Fetch /assets/asset-manifest.json first. Validate its exact shape and manifestSchemaVersion === "1.2" without adding a schema-validation dependency. Validate required asset fields, known content types, aliases, lowercase SHA-256 values, bundle metadata, and no unsupported properties.
+
+Use the existing asset-registry.json as the embedded expected inventory, deriving each bundle from its asset category. Verify each manifest asset’s ID, path, texture key, aliases, type, and derived bundle against it. Cross-check all SVG keys, URLs/paths, and aliases against publicSvgManifest.ts. Validate the three expected planet entries and their keys. Then require exactly 34 assets, with no duplicate IDs or texture keys, and the four expected bundle IDs/counts: components (19, v1.0), ships (10, v1.0), turrets-platforms (2, v1.0), planets (3, v1.1). Require the bundle path for each ID to match the expected /assets/<bundle>.bin path; do not use manifest-provided arbitrary URLs.
+
+Fetch all four bundles only after validating the manifest. Verify exact coverage once across all bundles: every expected ID appears exactly once, and no unexpected or duplicate record appears. Keep the existing approved source fingerprints in the Node validator unchanged.
+
+5. Decode and register images with Phaser 4.2.1
+Installed node_modules/phaser/package.json reports 4.2.1. Its actual TextureManager.js documents addImage(key, source) as accepting an HTMLImageElement; the installed phaser.d.ts gives the same type and specifies null on duplicate keys. checkKey() uses exists() and returns false for an existing key. remove() destroys and removes a texture, per TextureManager.js.
+
+Recommended path:
+
+Validate SVG XML/root namespace and PNG decoding from their verified payload bytes.
+Create Blob URLs and load each asset into an HTMLImageElement; await image.decode() and require nonzero natural dimensions.
+Decode all assets before changing Phaser’s Texture Manager.
+Preflight all 34 primary texture keys and three aliases for collisions using textures.exists().
+Register each image with textures.addImage(), reusing the same decoded image for its aliases. Fail on a null result; then verify all 37 keys with exists().
+On registration failure, remove only keys created by this loading attempt with textures.remove(). Revoke Blob URLs on success and failure.
+Do not pass ImageBitmap directly to addImage: Phaser 4.2.1’s public type does not accept it. createImageBitmap is unnecessary for this design; converting it to a canvas would introduce a second conversion path and is not the documented addImage input. The decoded HTMLImageElement path also matches the current alias registration.
+
+6. Startup sequence and error handling
+Keep Phaser’s normal BootScene preload for dummy textures and minimap icons. In BootScene create(), call a guarded async startup routine:
+
+Fetch and validate the manifest.
+Fetch and validate all four bundles and exact 34-asset coverage.
+Decode every bundle payload.
+Register all keys and aliases, then verify them.
+Start GameScene.
+A failed fetch, hash, parse, inventory, decode, collision, or registration step must leave GameScene unstarted. Catch the error in BootScene and show a visible message on the Phaser canvas; do not rely on the loader’s queued-file failure UI. Defer Game construction to GameScene.create() so a failure also prevents creation of the gameplay engine instance.
+
+7. Test architecture and verification plan
+Separate parser tests from Phaser/browser tests.
+
+Pure parser/manifest tests: synthetic RTAB fixtures for v1.0 SVG and v1.1 PNG; unsupported versions/types; flags, malformed header, truncation, integer/bounds overflows, invalid index digest, record and payload hashes, invalid UTF-8, duplicate/unsorted IDs, missing/unexpected IDs, coverage across bundles, manifest/version/count mismatch, and fetch/response failure handling.
+
+Loader integration tests: injected fetch/decoder/texture-manager interfaces to verify all decoding finishes before registration, primary keys and aliases register correctly, duplicate-key rejection, cleanup of keys installed before a registration failure, decode rejection, successful 34-asset startup, and failed startup without a GameScene start.
+
+Browser verification: run the app and confirm all 34 textures plus three aliases exist before gameplay starts. Confirm the three bundled planet maps render through the unchanged shader. Confirm network requests for migrated game SVGs and planet PNGs do not occur; the three minimap SVG requests remain. Exercise a missing bundle and corrupted payload to confirm the BootScene error is visible and gameplay stays inactive.
+
+No tests were run for this read-only audit.
+
+8. Risks and unresolved details
+crypto.subtle requires a secure context in deployed browsers; localhost is treated as secure, but deployment should use HTTPS. Fail visibly if SHA-256 verification is unavailable.
+TextureManager.addImage registers a texture synchronously after the image is decoded, but GPU upload may happen lazily during rendering. Verify the planet shader in a real WebGL browser.
+Blob image decoding may be restricted by a future Content Security Policy. If CSP is introduced, its img-src must allow blob:.
+Hashes detect inconsistencies relative to the fetched manifest; they do not authenticate a manifest that an attacker can replace together with its bundles. Serve them over HTTPS and treat this loader as integrity validation, not signature verification.
+The Game constructor currently runs while Phaser constructs GameScene. Deferring it to create() is a narrowly scoped lifecycle change to satisfy fail-closed startup.
+9. Proposed implementation stages and expected files
+Parser and contract: add src/assets/rtabRuntimeLoader.ts for manifest, parser, digest, inventory, and decode orchestration; add tests/rtab-runtime-parser.test.ts.
+Phaser startup integration: wire the loader into src/main.ts and defer Game construction. Add tests/rtab-runtime-loader.test.ts for registration, rollback, and startup behavior.
+Browser verification: run the planned visual/network/failure checks without changing existing bundles or removing loose public assets.
+No source files, tests, public assets, generated manifest, or private assets were changed. I’ll wait for your explicit approval of this plan before implementation.
+
