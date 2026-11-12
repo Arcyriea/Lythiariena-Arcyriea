@@ -1,0 +1,98 @@
+Canonical Player Migration Review
+Read-only review complete. No files were changed, and no build, test, packaging, asset, or watcher commands were run.
+
+1. Repository state
+Branch: main
+HEAD: 95e6c2166f7d9c45733589fc161d77017c2dae1e
+The audited commit and HEAD are identical: 0 commits ahead, 0 behind.
+The working tree is clean; no staged, modified, or untracked files were reported.
+I read the supplied audit snapshot and checked its claims against the source. The linked revalidation audit agrees that canonical runtime support exists while the production player remains on the structured legacy path.
+
+2. Current player initialization flow
+Game constructs ObjectPool, EntityManager, FactionManager, ShipManager, and ProjectileManager, then calls loadGameData() in Game.ts.
+loadGameData() clears shipData, sets the PlayerCannon tuple, calls ShipDataAdapter.ingestLegacyData(), then registers the player as a structured legacy blueprint with gameplay.parts, gameplay.components, stats, and visual sprites. Finally it syncs any remaining legacy ship definitions (Game.ts).
+GameScene.create() reads those legacy visual sprites to build the Phaser player Container. It creates the Arcade Physics body with world-bound collision disabled and drag 200, configures input, then acquires the logical player through ObjectPool.getShipObject('player') (main.ts).
+The scene assigns the player faction and Phaser position, rotation, body and scene references; registers the ship with EntityManager; and stores the Container as ship.sprite. It does not add the player to Game.shipQueue (main.ts).
+Each frame, the scene handles the existing steering and acceleration, copies Container state to the logical ship, updates its components, and activates its weapons on pointer click. Game.update() handles the rest of the game loop (main.ts).
+The camera follows the Container. On scene shutdown, the player is unregistered, its faction is cleared, it is returned to the object pool, its Phaser back-references are cleared, and the projectile manager is unbound (main.ts, main.ts).
+The player therefore has a deliberate scene-owned path separate from ordinary managed ships. The migration should keep it.
+
+3. Existing canonical infrastructure
+The corrected audit’s key claims are supported by the source:
+
+Shipmaker.ts already defines hull parts and mount contracts; it also defines HullDefinition, canonical weapon component types, ShipLoadout, and the canonical ShipBlueprintDefinition.
+Game.ts already owns typed hull, component, loadout, and legacy-compatibility registries.
+ShipDataAdapter.ts converts legacy tuples into compatibility records. It clears all four typed/compatibility maps first, then populates them from componentData and shipData. Legacy weapon projections create hardpoints that accept both spinal and turret weapons; those projections are compatibility data, not authored canonical player definitions.
+Ship.init() selects its canonical path when the registered blueprint has hullId and loadoutId. That path resolves hull and loadout, materializes hull parts at their declared coordinates, processes built-ins, rejects duplicate or reserved installations, checks mount compatibility, and creates installed components (Ship.ts).
+Canonical component installation already reaches Component.init(), which distinguishes canonical definitions from legacy definitions and tuples. Canonical weapons are initialized by Weapon.init(); when the game has a projectile manager, Component constructs a ManagedWeapon (Component.ts).
+Canonical definitions in shipmaker-parity.test.ts are manually registered after game setup. They are distinct from adapter-generated legacy records and the still-legacy production player.
+4. Exact migration gap and risks
+The current player blueprint has neither hullId nor loadoutId, so Ship.init() selects the structured legacy branch. Its component tuple becomes an adapter-produced kind: 'legacy' record, and its cannon is attached by legacy partIndex.
+
+The migration can use the canonical path already in place, but ordering matters: authored canonical player definitions must be registered after ingestLegacyData(), because a later ingestion clears and repopulates the registries. Re-ingestion after authoring would erase the canonical records and recreate the legacy PlayerCannon record. No adapter changes are required if player definitions are registered after the one existing ingestion call.
+
+There are no non-test production references to PlayerCannon beyond its tuple and the player attachment in Game.ts. Tests have their own legacy tuple fixtures. Removing the production tuple and registering a canonical PlayerCannon avoids having the same ID act as both the production legacy tuple and canonical definition. The adapter should remain available for other legacy content.
+
+Important visual dependency: after migration, the player definition will be canonical and no longer have the legacy visual field. The current player setup in main.ts requires that field and would throw. The scene needs to obtain the existing player sprite descriptors separately.
+
+Firing compatibility: both weapon paths compute projectile origin from the installed component’s shipPart position rotated by ship angle, and use ship angle for direction. They inherit Phaser body velocity; the managed path also captures source ID and faction through ProjectileManager (Weapon.ts, ManagedWeapon.ts). A hardpoint at (0, 0) therefore preserves the current player’s center origin and ship-facing direction. Although canonical contracts include attachment and muzzle geometry, these firing implementations do not consume them. An empty muzzle list and no invented muzzle geometry are sufficient for this migration. Configured range and splash radius remain 400 and 0, but the current Arcade projectile path does not apply range or splash behavior.
+
+The canonical Component.subType will be the component ID rather than the legacy firing-mode string. I found no production consumer of a weapon component’s subType; firing dispatch uses the weapon effect’s firing mode. Existing tests that assert legacy subtype should assert the canonical weapon’s firing mode instead.
+
+Ship.hullDefinition is set by canonical initialization and cleared by reset; its runtime consumer is hull-mod capacity (Ship.ts). Pool acquisition calls Ship.init() for both new and reused ships (ObjectPool.ts); initialization resets stats and collections, and disposal clears the hull reference. No pooling change is indicated.
+
+5. Recommended file-by-file changes
+File	Proposed change	Why and scope
+Game.ts	After legacy ingestion, register hull.player, loadout.player, canonical PlayerCannon, and a canonical player blueprint. Remove the production legacy tuple and structured legacy gameplay/visual fields. Keep the existing stats exactly.	Required. This authors the production player data in canonical form and respects the adapter’s clearing behavior.
+main.ts	Replace the player blueprint’s visual lookup with the same six scene-rendered sprite descriptors, preserving their keys, positions, and scale. Keep Container, physics, input, player setup, and cleanup intact.	Required. Canonical blueprints have no visual field; leaving this lookup would stop scene initialization. This is only a way to preserve the current composition, not generalized or Ship-owned rendering.
+ship-blueprint.test.ts	Replace assertions for structured legacy gameplay/visual data and the tuple with assertions for canonical IDs, part, hardpoint, loadout installation, component definition, and exact stats.	Required. The test currently codifies the legacy player representation.
+shipmaker-parity.test.ts	Update the player parity case to assert canonical weapon values and player initialization; retain separate legacy fixture coverage.	Required. Its current player case describes the production player as legacy.
+player-weapon.test.ts	Add focused assertions for canonical PlayerCannon operation values and successful activation energy/cooldown behavior; retain the existing legacy tests as compatibility coverage.	Required regression coverage. Current assertions exercise legacy tuples only.
+phase2a-taxonomy.test.ts	Rework or remove the outdated “existing PlayerCannon runtime behavior” setup that describes the player as a canonical blueprint but then invokes legacy ingestion for its player data.	Required test cleanup. The test’s setup and title do not cleanly represent production canonical registration ordering.
+The existing component activation tests verify cooldown and energy behavior for legacy tuples. The migration-specific assertions should verify that the canonical definition reaches the same runtime behavior. The existing parity and lifecycle assertions should continue to verify exact stats, the player’s tractor initialization, and that player setup leaves it outside shipQueue. No scene lifecycle logic needs redesign.
+
+6. Player definitions to author
+Blueprint: ShipBlueprintDefinition for hull.player and loadout.player, with subType: 'Player' so the existing tractor behavior remains active.
+Stats: maxHull: 25, maxShell: 50, regenShell: 0, maxEnergy: 100, regenEnergy: 20, maxSpeed: 5, acceleration: 0.5, weight: 10, radius: 20, value: 0; retain identity values Ship, Player Ship, and Air.
+Hull: one logical central-hull part at (0, 0), rotation 0, isLoot: false; one explicit weapon hardpoint at (0, 0), rotation 0, accepts: ['spinal']; no built-in component, dimensions, extra parts, or new restrictions.
+Loadout: explicitly install PlayerCannon at that hardpoint.
+Component: canonical spinal weapon with ProjectileArcade, damage 10, range 400, cooldown 0.15, energy cost 5, projectile speed 600, splash radius 0; attachment origin (0, 0) and rotation 0; no dimensions or added visuals. The contract requires a muzzle array; leave it empty because the current firing path uses the mount origin directly.
+7. Player visual preservation
+The existing six scene sprites are:
+
+human-dreadnought at (0, 0), scale 0.18
+ship-wing at (-20, -25) and (-20, 25)
+hardpoint at (30, 0), (-10, -20), and (-10, 20)
+human-dreadnought remains available as an RTAB runtime alias for public-ships-human-dreadnought; runtimeAssetContract.ts lists it, and rtabRuntimeLoader.ts registers both primary keys and aliases with Phaser. ship-wing and hardpoint are generated by BootScene’s existing dummy-texture generation (main.ts). Keep these descriptors in the player scene setup or a small player-only constant there. Do not move them into hull/component composition or make Ship own the Phaser objects.
+
+8. Lifecycle and behavior compatibility
+Keep the player path in GameScene: Phaser Container creation, Arcade body settings, initial position (400, 300), movement/input code, Container-to-Ship synchronization, camera follow, manager registration, and shutdown cleanup remain unchanged. Continue using ObjectPool.getShipObject('player'); do not route the player through ShipManager.createShip() or shipQueue.
+
+The canonical loadout should create one weapon component with loadout installation metadata, and no built-in reservation. The mount’s zero position preserves the current projectile origin. The existing managed/fallback firing implementations remain unchanged; shared transforms and muzzle support are separate milestones.
+
+9. Registry and initialization ordering
+Initialize game data and any legacy tuples that still exist.
+Call ShipDataAdapter.ingestLegacyData() once.
+Register authored canonical player hull, canonical PlayerCannon, loadout, and blueprint after ingestion.
+Keep ShipManager.syncFromGame() for any remaining legacy ship catalogue entries; the player’s registered blueprint remains the source-key entry for player.
+Do not call adapter ingestion again after canonical player registration unless the code re-registers the canonical definitions afterward.
+The existing adapter-generated hull.player/loadout.player only arise if player exists in shipData; production currently sets shipData to {}. The manual canonical test records are authored in test setup and are not production definitions.
+
+10. Files that should not need modification
+Shipmaker.ts: contracts already express the required data.
+ShipBlueprint.ts: its definition union and catalogue already support canonical blueprints.
+ShipDataAdapter.ts: its clearing behavior is handled by registration order.
+Ship.ts, Component.ts, Weapon.ts, and ManagedWeapon.ts: canonical installation and firing support already exist.
+ShipManager.ts, EntityManager.ts, and ObjectPool.ts: their existing catalogue, registration, queue, and reuse boundaries are sufficient.
+Generated asset contracts, asset bundles, and runtime asset loader: all required keys are already registered.
+11. Documentation and uncertainties
+The Shipmaker handoff reflects an older snapshot and says the prerequisite architecture work is unimplemented. Its broader rendering and transform proposals remain separate. The Milestone 1 audit identifies player migration as missing and explicitly separates it from shared transforms and rendering. I used the corrected pinned audit and current source for implementation status.
+
+No developer decision is needed to describe the narrow migration. The only implementation detail to keep explicit during approval review is that the existing appearance stays as player-scene sprite descriptors because canonical blueprints do not carry the legacy visual field.
+
+12. Proposed implementation sequence and stop condition
+Register the canonical player definitions immediately after adapter ingestion in Game.loadGameData(), preserving the current identity and statistics.
+Keep the player’s existing six visual descriptors available to GameScene without changing texture keys or introducing generalized rendering.
+Update the player blueprint, parity, weapon, and taxonomy test expectations to cover canonical data and preserve legacy fixture coverage.
+After explicit approval, run only the regression checks authorized for the implementation; this review did not run them.
+This report is the requested read-only plan. I stopped without editing source or test files; implementation remains subject to your explicit approval.
